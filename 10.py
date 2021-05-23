@@ -17,14 +17,14 @@ def knot(lengths, rounds=1):
     return hash
 
 # Part 1
-lengths = list(map(int, open("input10.txt").read().split(",")))
+lengths = list(map(int, open("10.txt").read().split(",")))
 a = knot(lengths)
 print(a[0] * a[1])
 
 # Part 2
 from functools import reduce
-lengths = list(map(ord, open("input10.txt").read().strip())) + [17, 31, 73, 47, 23]
+lengths = list(map(ord, open("10.txt").read().strip())) + [17, 31, 73, 47, 23]
 sparse = knot(lengths, 64)
 for i in range(0, len(sparse), 16):
-    print('%x' % reduce(lambda x, y: x ^ y, sparse[i:i + 16]), end='')
+    print('%02x' % reduce(lambda x, y: x ^ y, sparse[i:i + 16]), end='')
 print()

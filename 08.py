@@ -1,6 +1,6 @@
 reg = {}
 rmax = 0
-with open("input08.txt") as f:
+with open("08.txt") as f:
     for line in f:
         m = line.split()
         reg.setdefault(m[0], 0)

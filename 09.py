@@ -1,4 +1,4 @@
-a = list(open("input09.txt").read())
+a = list(open("09.txt").read())
 i = 0
 group = 0
 score = 0

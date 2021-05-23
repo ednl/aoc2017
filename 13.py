@@ -1,5 +1,5 @@
 layer = {}
-with open("input13.txt") as f:
+with open("13.txt") as f:
     for line in f:
         a = list(map(int, line.strip().split(": ")))
         layer[a[0]] = a[1]

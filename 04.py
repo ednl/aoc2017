@@ -1,5 +1,5 @@
 valid1 = valid2 = 0
-with open("input04.txt") as f:
+with open("04.txt") as f:
     for line in f:
         a = line.rstrip("\n").split(" ")
         valid1 += len(set(a)) == len(a)

@@ -1,7 +1,7 @@
 import numpy as np
 
 # Read text as array
-a = np.loadtxt("input02.txt", dtype=np.uint32)
+a = np.loadtxt("02.txt", dtype=np.uint32)
 a.sort(axis=1)
 
 # Part 1

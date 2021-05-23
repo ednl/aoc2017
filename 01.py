@@ -1,7 +1,7 @@
 import numpy as np
 
 # Read file as unsigned char, convert digits to numerical value, drop EOL
-a = (np.fromfile("input01.txt", dtype=np.uint8) - ord('0'))[:-1]
+a = (np.fromfile("01.txt", dtype=np.uint8) - ord('0'))[:-1]
 
 # Circular permutation to the right by 1
 b = np.roll(a, 1)

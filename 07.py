@@ -4,7 +4,7 @@ r0 = re.compile('^([a-z]+) \((\d+)\)(?: -> ([a-z, ]+))?')
 # Part 1
 allprogs = set()
 hasparent = set()
-with open("input07.txt") as f:
+with open("07.txt") as f:
     for line in f:
         if m := r0.match(line):
             allprogs.add(m[1])
@@ -17,7 +17,7 @@ print(root)
 
 # Part 2
 prog = {}
-with open("input07.txt") as f:
+with open("07.txt") as f:
     for line in f:
         if m := r0.match(line):
             parent = m[1]

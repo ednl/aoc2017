@@ -1,6 +1,6 @@
 import numpy as np
 pipe = np.zeros((2000, 2000), dtype=np.uint8).astype('?')
-with open("input12.txt") as f:
+with open("12.txt") as f:
     for line in f:
         a = line.strip().split(' <-> ')
         i = int(a[0])

@@ -3,7 +3,7 @@ import numpy as np
 def state(a):
     return "".join(list(map(chr, a + 32)))
 
-a = np.loadtxt("input06.txt", dtype=np.uint8)
+a = np.loadtxt("06.txt", dtype=np.uint8)
 banks = a.size
 
 seen = set()

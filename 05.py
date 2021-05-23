@@ -1,4 +1,4 @@
-data = list(map(int, open("input05.txt")))
+data = list(map(int, open("05.txt")))
 size = len(data)
 
 # Part 1
