@@ -7,20 +7,20 @@
 #define L (N + 1)
 static uint8_t line[L] = {0};
 
-static void spin(uint8_t n)
+static void spin(uint8_t *a, uint8_t size, uint8_t count)
 {
-    if (n > M) {
-        n %= N;
+    if (count > size - 1) {
+        count %= size;
     }
-    if (n <= 0) {
+    if (count <= 0) {
         return;
     }
-    while (n--) {
-        uint8_t t = line[M];
-        for (uint8_t i = M; i > 0; --i) {
-            line[i] = line[i - 1];
+    while (count--) {
+        uint8_t t = a[size - 1];
+        for (uint8_t i = size - 1; i > 0; --i) {
+            a[i] = a[i - 1];
         }
-        line[0] = t;
+        a[0] = t;
     }
 }
 
@@ -62,7 +62,7 @@ int main(void)
         while ((c = fgetc(fp)) != EOF) {
             if (c == 's') {
                 if (fscanf(fp, "%hhu", &i) == 1) {
-                    spin(i);
+                    spin(line, N, i);
                 }
             } else if (c == 'x') {
                 if (fscanf(fp, "%hhu/%hhu", &i, &j) == 2) {
@@ -79,12 +79,19 @@ int main(void)
     printf("%s\n", line);
 
     // Part 2
-    uint8_t cycle[N][L] = {0};
+    uint8_t loop[N][L] = {0};
     for (uint8_t i = 0; i < N; ++i) {
-        cycle[j]
+        uint8_t org = line[i];
+        if (org != '\0') {
+            uint8_t cur = org, len = 0, t;
+            do {
+                loop[i][len++] = cur;
+                t = cur - A;
+                cur = line[t];
+                line[t] = '\0';
+            } while (cur != org);
+            printf("%u: %s\n", i, loop[i]);
+        }
     }
-    const uint32_t n = 1000 * 1000 * 1000;
-    // printf("%s\n", next);
-
     return 0;
 }
