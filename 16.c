@@ -1,69 +1,72 @@
 #include <stdio.h>
-#include <stdint.h>
 #include <string.h>
 
 #define A ('a')
-#define N (16)
-#define M (N - 1)
-#define L (N + 1)
-#define CACHESIZE (100)
+#define N (16U)
+#define M (N - 1U)
+#define L (N + 1U)
+#define DANCE (1000U * 1000U * 1000U)
+#define CACHESIZE (100U)
 
-static uint8_t line[L] = {0};
+static char line[L] = {0};
 
-static void spin(uint8_t count)
+static void spin(unsigned int count)
 {
-    while (count--) {
-        uint8_t t = line[M];
-        for (uint8_t i = M; i > 0; --i) {
-            line[i] = line[i - 1];
-        }
-        line[0] = t;
+    static char tmp[L] = {0};
+    for (unsigned int i = 0; i < N; ++i) {
+        tmp[count++ & M] = line[i];
     }
+    strcpy((char *)line, (char *)tmp);
 }
 
-static void exchange(uint8_t i, uint8_t j)
+static void exchange(unsigned int i, unsigned int j)
 {
-    uint8_t t = line[i];
+    char t = line[i];
     line[i] = line[j];
     line[j] = t;
 }
 
-static void partner(uint8_t a, uint8_t b)
+static void partner(char a, char b)
 {
-    for (uint8_t i = 0; i < N; ++i) {
+    char todo = 2;
+    for (unsigned int i = 0; i < N; ++i) {
         if (line[i] == a) {
             line[i] = b;
+            if (!--todo) {
+                break;
+            }
         } else if (line[i] == b) {
             line[i] = a;
+            if (!--todo) {
+                break;
+            }
         }
     }
 }
 
-void part1(FILE *fp)
+static void part1(FILE *fp)
 {
     int c;
-    uint8_t i, j;
+    unsigned int i, j;
+    char a, b;
     while ((c = fgetc(fp)) != EOF) {
-        if (c == 's') {
-            if (fscanf(fp, "%hhu", &i) == 1) {
-                spin(i);
-            }
-        } else if (c == 'x') {
-            if (fscanf(fp, "%hhu/%hhu", &i, &j) == 2) {
-                exchange(i, j);
-            }
+        if (c == 'x') {
+            fscanf(fp, "%u/%u", &i, &j);
+            exchange(i, j);
+        } else if (c == 's') {
+            fscanf(fp, "%u", &i);
+            spin(i);
         } else if (c == 'p') {
-            if (fscanf(fp, "%c/%c", &i, &j) == 2) {
-                partner(i, j);
-            }
+            fscanf(fp, "%c/%c", &a, &b);
+            partner(a, b);
         }
     }
 }
 
 int main(void)
 {
-    uint8_t cache[CACHESIZE][L] = {0};
-    uint32_t loop = 0;
+    char cache[CACHESIZE][L] = {0};
+    unsigned int loop = 0;
 
     FILE *fp = fopen("16.txt", "r");
     if (fp == NULL) {
@@ -72,9 +75,10 @@ int main(void)
     }
 
     // Init
-    uint8_t i, j = A;
-    for (i = 0; i < N; ++i) {
-        line[i] = j++;
+    unsigned int i = 0;
+    char c = A;
+    while (i < N) {
+        line[i++] = c++;
     }
     strcpy((char *)cache[loop++], (char *)line);
 
@@ -90,8 +94,8 @@ int main(void)
     while (loop < CACHESIZE) {
         // Test if original configuration
         i = 0;
-        j = A;
-        while (line[i++] == j++)
+        c = A;
+        while (line[i++] == c++)
             ;
         if (i == L) {
             // Found the loop
@@ -109,6 +113,6 @@ int main(void)
         fprintf(stderr, "Cache too small.");
         return 2;
     }
-    printf("%s\n", cache[(1000 * 1000 * 1000) % loop]);
+    printf("%s\n", cache[DANCE % loop]);
     return 0;
 }
