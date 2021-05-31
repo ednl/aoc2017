@@ -1,12 +1,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <string.h>
 
 #define MEMSIZE (41)
+#define REGBASE ('a')
+#define REGSIZE ('z' - REGBASE + 1)
 
 typedef enum {
-    INVALID = -1,
-    SET,
+    NOP = -1,
+    SET =  0,
     ADD,
     MUL,
     MOD,
@@ -17,32 +20,66 @@ typedef enum {
 
 typedef struct {
     OpCode id;
-    int    pc;
     char  *name;
-} OpDict, *pOpDict;
+} Dict, *pDict;
 
-static const OpDict cmd[] = {
-    { .id = SET, .pc = 2, .name = "set" },
-    { .id = ADD, .pc = 2, .name = "add" },
-    { .id = MUL, .pc = 2, .name = "mul" },
-    { .id = MOD, .pc = 2, .name = "mod" },
-    { .id = JGZ, .pc = 2, .name = "jgz" },
-    { .id = SND, .pc = 1, .name = "snd" },
-    { .id = RCV, .pc = 1, .name = "rcv" },
+static const Dict cmd[] = {
+    { .id = SET, .name = "set" },
+    { .id = ADD, .name = "add" },
+    { .id = MUL, .name = "mul" },
+    { .id = MOD, .name = "mod" },
+    { .id = JGZ, .name = "jgz" },
+    { .id = SND, .name = "snd" },
+    { .id = RCV, .name = "rcv" },
 };
 static const int cmdsize = sizeof cmd / sizeof *cmd;
 
 typedef struct {
-    OpCode op;
-    int r0, r1;
-    int64_t val0, val1;
-} Ins, *pIns;
+    OpCode  op;
+    int     mode;  // 0=rr 1=rv 2=vr 3=vv 4=r 5=v
+    int     r0, r1;
+    int64_t v0, v1;
+} Instr, *pInstr;
 
-static Ins mem[MEMSIZE] = {0};
-static int64_t reg['z' - 'a' + 1] = {0}, sound = 0;
+typedef struct list List, *pList;
+struct list {
+    int64_t val;
+    pList   next;
+};
 
-static Ins assemble(char *code)
+typedef struct {
+    int     pid, ip;
+    int     state;  // 0=paused 1=running 2=waiting
+    Instr   mem[MEMSIZE];
+    int64_t reg[REGSIZE];
+    pList   firstmsg, lastmsg;
+} Prog;
+
+static Instr assemble(char *code)
 {
+    Instr ins = (Instr){NOP, -1, -1, -1, -1};
+    int i, field = 0;
+    char *s = strtok(code, " ");
+    while (s) {
+        if (field == 0) {
+            for (i = 0; i < cmdsize; ++i) {
+                if (strcmp(cmd[i].name, s) == 0) {
+                    ins.op = cmd[i].id;
+                    break;
+                }
+            }
+        } else if (field == 1) {
+            if (*s >= 'a') {
+                ins.r0 = *s - 'a';
+                ins.val0 = -1;
+            } else {
+                ins.r0 = -1;
+                ins.val0 = atoll(s);
+            }
+        }
+        s = strtok(NULL, " ");
+        ++field;
+    }
     for (int i = 0; i < cmdsize; ++i) {
         int j = 0;
         while (cmd[i].name[j] == code[j]) {
@@ -68,7 +105,7 @@ static Ins assemble(char *code)
             return (Ins){cmd[i].id, r0, r1, val0, val1};
         }
     }
-    return (Ins){INVALID, -1, -1, -1, -1};
+    return ins;
 }
 
 int main(void)
