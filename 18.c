@@ -5,9 +5,16 @@
 
 #define MEMSIZE (41)
 #define REGBASE ('a')
-#define REGSIZE ('z' - REGBASE + 1)
+#define REGSTOP ('z')
+#define REGSIZE (REGSTOP - REGBASE + 1)
 
-typedef enum {
+typedef enum runstate {
+    READY,
+    RUN,
+    WAIT,
+} RunState;
+
+typedef enum opcode {
     NOP = -1,
     SET =  0,
     ADD,
@@ -18,25 +25,25 @@ typedef enum {
     RCV,
 } OpCode;
 
-typedef struct {
+typedef struct dict {
     OpCode id;
+    int    param;
     char  *name;
 } Dict, *pDict;
 
 static const Dict cmd[] = {
-    { .id = SET, .name = "set" },
-    { .id = ADD, .name = "add" },
-    { .id = MUL, .name = "mul" },
-    { .id = MOD, .name = "mod" },
-    { .id = JGZ, .name = "jgz" },
-    { .id = SND, .name = "snd" },
-    { .id = RCV, .name = "rcv" },
+    { .id = SET, .name = "set", .param = 2 },
+    { .id = ADD, .name = "add", .param = 2 },
+    { .id = MUL, .name = "mul", .param = 2 },
+    { .id = MOD, .name = "mod", .param = 2 },
+    { .id = JGZ, .name = "jgz", .param = 2 },
+    { .id = SND, .name = "snd", .param = 1 },
+    { .id = RCV, .name = "rcv", .param = 1 },
 };
 static const int cmdsize = sizeof cmd / sizeof *cmd;
 
-typedef struct {
-    OpCode  op;
-    int     mode;  // 0=rr 1=rv 2=vr 3=vv 4=r 5=v
+typedef struct instr {
+    pDict   op;
     int     r0, r1;
     int64_t v0, v1;
 } Instr, *pInstr;
@@ -47,145 +54,250 @@ struct list {
     pList   next;
 };
 
-typedef struct {
-    int     pid, ip;
-    int     state;  // 0=paused 1=running 2=waiting
-    Instr   mem[MEMSIZE];
-    int64_t reg[REGSIZE];
-    pList   firstmsg, lastmsg;
-} Prog;
+typedef struct prog {
+    int      pid, ip, tick, sent;
+    RunState state;  // 0=ready, 1=running, 2=waiting
+    int64_t  reg[REGSIZE];
+    Instr    mem[MEMSIZE];
+    pList    qhead, qtail;
+} Prog, *pProg;
 
 static Instr assemble(char *code)
 {
-    Instr ins = (Instr){NOP, -1, -1, -1, -1};
+    Instr ins = (Instr){NULL, -1, -1, -1, -1};
     int i, field = 0;
     char *s = strtok(code, " ");
     while (s) {
         if (field == 0) {
             for (i = 0; i < cmdsize; ++i) {
                 if (strcmp(cmd[i].name, s) == 0) {
-                    ins.op = cmd[i].id;
+                    ins.op = &cmd[i];
                     break;
                 }
             }
         } else if (field == 1) {
             if (*s >= 'a') {
-                ins.r0 = *s - 'a';
-                ins.val0 = -1;
+                ins.r0 = *s - REGBASE;
             } else {
-                ins.r0 = -1;
-                ins.val0 = atoll(s);
+                ins.v0 = atoll(s);
+            }
+        } else if (field == 2) {
+            if (*s >= 'a') {
+                ins.r1 = *s - REGBASE;
+            } else {
+                ins.v1 = atoll(s);
             }
         }
-        s = strtok(NULL, " ");
         ++field;
-    }
-    for (int i = 0; i < cmdsize; ++i) {
-        int j = 0;
-        while (cmd[i].name[j] == code[j]) {
-            ++j;
-        }
-        if (j == 3) {
-            int r0 = -1, r1 = -1;
-            int64_t val0 = -1, val1 = -1;
-            if (cmd[i].pc > 0) {
-                if (code[4] >= 'a' && code[4] <= 'z') {
-                    r0 = code[4] - 'a';
-                } else {
-                    sscanf(&code[4], "%lli", &val0);
-                }
-            }
-            if (cmd[i].pc > 1) {
-                if (code[6] >= 'a' && code[6] <= 'z') {
-                    r1 = code[6] - 'a';
-                } else {
-                    sscanf(&code[6], "%lli", &val1);
-                }
-            }
-            return (Ins){cmd[i].id, r0, r1, val0, val1};
-        }
+        s = strtok(NULL, " ");
     }
     return ins;
 }
 
-int main(void)
+static void load(pProg p, int id)
 {
-    FILE *fp = fopen("18.txt", "r");
-    if (fp == NULL) {
-        fprintf(stderr, "File not found");
-        return 1;
-    }
+    p->pid   = id;
+    p->ip    = 0;
+    p->tick  = 0;
+    p->sent  = 0;
+    p->state = READY;
+    p->qhead = NULL;
+    p->qtail = NULL;
 
+    for (int i = 0; i < REGSIZE; ++i) {
+        p->reg[i] = 0;
+    }
+    p->reg['p' - REGBASE] = id;
+
+    FILE *f = fopen("18.txt", "r");
+    if (f == NULL) {
+        fprintf(stderr, "File not found");
+        exit(1);
+    }
     char *buf = NULL;
     size_t buflen = 0, line = 0;
     ssize_t len;
-    while ((len = getline(&buf, &buflen, fp) > 0) && line < MEMSIZE) {
-        mem[line++] = assemble(buf);
+    while ((len = getline(&buf, &buflen, f) > 0) && line < MEMSIZE) {
+        p->mem[line++] = assemble(buf);
     }
-    fclose(fp);
+    fclose(f);
     free(buf);
+}
 
-    for (size_t i = 0; i < line; ++i) {
-        printf("%2zu: %s", i, cmd[mem[i].op].name);
-        if (cmd[mem[i].op].pc > 0) {
-            if (mem[i].r0 >= 0) {
-                printf(" %c", 'a' + mem[i].r0);
-            } else {
-                printf(" %lli", mem[i].val0);
-            }
+static void print(pProg p, int listing)
+{
+    int i;
+    int64_t k;
+    pList q;
+
+    printf("Program ID : %i\n", p->pid);
+    printf("Instr Pntr : %i\n", p->ip);
+    printf("Clock Tick : %i\n", p->tick);
+    printf("Send Count : %i\n", p->sent);
+    printf("Run State  : %i (0=ready 1=running 2=waiting)\n", p->state);
+    for (i = 0; i < REGSIZE; ++i) {
+        if ((k = p->reg[i]) != 0) {
+            printf("Register %c : %lli\n", REGBASE + i, k);
         }
-        if (cmd[mem[i].op].pc > 1) {
-            if (mem[i].r1 >= 0) {
-                printf(" %c", 'a' + mem[i].r1);
-            } else {
-                printf(" %lli", mem[i].val1);
-            }
-        }
-        printf("\n");
     }
+    printf("Message Q  :");
+    i = 0;
+    q = p->qhead;
+    while (q) {
+        printf(" %lli", q->val);
+        q = q->next;
+        ++i;
+    }
+    printf(" (len=%i)\n", i);
+    if (listing) {
+        for (i = 0; i < MEMSIZE; ++i) {
+            if (p->mem[i].op != NULL && p->mem[i].op->id != NOP) {
+                printf("  %2i: %s", i, p->mem[i].op->name);
+                if (p->mem[i].op->param > 0) {
+                    if (p->mem[i].r0 != -1) {
+                        printf(" %c", REGBASE + p->mem[i].r0);
+                    } else {
+                        printf(" %lli", p->mem[i].v0);
+                    }
+                }
+                if (p->mem[i].op->param > 1) {
+                    if (p->mem[i].r1 != -1) {
+                        printf(" %c", REGBASE + p->mem[i].r1);
+                    } else {
+                        printf(" %lli", p->mem[i].v1);
+                    }
+                }
+                printf("\n");
+            }
+        }
+    }
+    printf("\n");
+}
 
-    int ip = 0, tick = 0;
-    while (ip >= 0 && ip < MEMSIZE) {
-        ++tick;
-        if (mem[ip].r0 >= 0) {
-            mem[ip].val0 = reg[mem[ip].r0];
+static int run(pProg p, pProg q, int part)
+{
+    pList pl;
+    int clock = p->tick;
+    if (p->state == READY) {
+        p->state = RUN;
+    }
+    while (p->ip >= 0 && p->ip < MEMSIZE && (p->state != WAIT || (q != NULL && q->qhead != NULL))) {
+        pInstr i = &(p->mem[p->ip]);
+        if (i->op->param > 0 && i->r0 >= 0) {
+            i->v0 = p->reg[i->r0];
         }
-        if (mem[ip].r1 >= 0) {
-            mem[ip].val1 = reg[mem[ip].r1];
+        if (i->op->param > 1 && i->r1 >= 0) {
+            i->v1 = p->reg[i->r1];
         }
-        switch (mem[ip].op) {
-            case INVALID:
+        switch (i->op->id) {
+            case NOP:
+                p->ip++;
+                p->tick++;
                 break;
             case SET:
-                reg[mem[ip].r0] = mem[ip].val1;
+                p->reg[i->r0] = i->v1;
+                p->ip++;
+                p->tick++;
                 break;
             case ADD:
-                reg[mem[ip].r0] += mem[ip].val1;
+                p->reg[i->r0] += i->v1;
+                p->ip++;
+                p->tick++;
                 break;
             case MUL:
-                reg[mem[ip].r0] *= mem[ip].val1;
+                p->reg[i->r0] *= i->v1;
+                p->ip++;
+                p->tick++;
                 break;
             case MOD:
-                reg[mem[ip].r0] %= mem[ip].val1;
+                p->reg[i->r0] %= i->v1;
+                p->ip++;
+                p->tick++;
                 break;
             case JGZ:
-                if (mem[ip].val0 > 0) {
-                    ip += mem[ip].val1 - 1;
+                if (i->v0 > 0) {
+                    p->ip += i->v1;
+                } else {
+                    p->ip++;
                 }
+                p->tick++;
                 break;
             case SND:
-                sound = mem[ip].val0;
+                pl = (pList)malloc(sizeof(List));
+                if (pl) {
+                    pl->val = i->v0;
+                    pl->next = NULL;
+                    if (p->qhead == NULL) {
+                        p->qhead = pl;
+                        p->qtail = pl;
+                    } else {
+                        p->qtail->next = pl;
+                        p->qtail = pl;
+                    }
+                }
+                p->ip++;
+                p->tick++;
+                p->sent++;
                 break;
             case RCV:
-                if (mem[ip].val0 != 0) {
-                    printf("freq: %lli\n", sound);
-                    ip = MEMSIZE;
+                if (part == 1) {
+                    if (i->v0 != 0) {
+                        p->state = WAIT;
+                    } else {
+                        p->ip++;
+                        p->tick++;
+                    }
+                } else if (part == 2) {
+                    if (q != NULL && (pl = q->qhead) != NULL) {
+                        p->reg[i->r0] = pl->val;
+                        q->qhead = pl->next;
+                        free(pl);
+                        p->ip++;
+                        p->tick++;
+                    } else {
+                        p->state = WAIT;
+                    }
                 }
                 break;
         }
-        ++ip;
     }
-    printf("tick: %i\n", tick);
+    if (p->state == RUN) {
+        p->state = READY;
+    }
+    return p->tick - clock;
+}
 
+int main(void)
+{
+    int t0 = 0, t1 = 0;
+    Prog p, q;
+
+    // Part 1
+    load(&p, 0);
+    t0 = run(&p, NULL, 1);
+    print(&p, 0);  // debug
+    printf("Part 1: %lli\n\n", p.qtail ? p.qtail->val : -1);
+
+    // Part 2
+    load(&q, 1);
+    while (t0 || t1) {
+        t1 = run(&q, &p, 2);
+        t0 = run(&p, &q, 2);
+    }
+    print(&p, 0);  // debug
+    print(&q, 0);  // debug
+    printf("Part 2: %i\n\n", q.sent);
+
+    // Clean up
+    while (p.qhead) {
+        pList t = p.qhead->next;
+        free(p.qhead);
+        p.qhead = t;
+    }
+    while (q.qhead) {
+        pList t = q.qhead->next;
+        free(q.qhead);
+        q.qhead = t;
+    }
     return 0;
 }
