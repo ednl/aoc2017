@@ -286,7 +286,7 @@ int main(void)
     }
     print(&p, 0);  // debug
     print(&q, 0);  // debug
-    printf("Part 2: %i\n\n", q.sent);
+    printf("Part 2: %i\n", q.sent);
 
     // Clean up
     while (p.qhead) {
