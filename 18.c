@@ -135,7 +135,7 @@ static void load(pProg p, pProg q)
         char *buf = NULL;
         size_t buflen = 0, line = 0;
         ssize_t len;
-        while ((len = getline(&buf, &buflen, f) > 0) && line < MEMSIZE) {
+        while ((len = getline(&buf, &buflen, f)) != -1 && line < MEMSIZE) {
             p->mem[line++] = assemble(buf);
         }
         fclose(f);
