@@ -224,7 +224,9 @@ static void run(pProg p, pProg q, int part)
             break;
         case JGZ:
             if (i->v0 > 0) {
-                p->ip += i->v1 - 1;  // compensate for ip++ at end of loop
+                p->ip += i->v1;
+                p->tick++;
+                continue;  // skip updates at end of loop
             }
             break;
         case SND:
