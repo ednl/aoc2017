@@ -165,7 +165,7 @@ static void print(pProg p, int listing)
     i = 0;
     mq = p->mqhead;
     while (mq) {
-        printf(" %lli", mq->val);
+        printf(" %"PRIi64, mq->val);
         mq = mq->next;
         ++i;
     }
