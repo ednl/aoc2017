@@ -1,7 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
-#include <stdbool.h>
 #include <string.h>
 
 #define MEMSIZE (41)
@@ -10,35 +9,34 @@
 #define REGSIZE (REGSTOP - REGBASE + 1)
 
 typedef enum opcode {
-    NOP = -1,
-    SET =  0,
+    SET,
     ADD,
     MUL,
     MOD,
     JGZ,
     SND,
     RCV,
+    NOP,  // invalid opcode
 } OpCode;
 
 typedef struct dict {
     OpCode id;
-    int    param;
     char  *name;
 } Dict, *pDict;
 
 static const Dict cmd[] = {
-    { .id = SET, .name = "set", .param = 2 },
-    { .id = ADD, .name = "add", .param = 2 },
-    { .id = MUL, .name = "mul", .param = 2 },
-    { .id = MOD, .name = "mod", .param = 2 },
-    { .id = JGZ, .name = "jgz", .param = 2 },
-    { .id = SND, .name = "snd", .param = 1 },
-    { .id = RCV, .name = "rcv", .param = 1 },
+    { .id = SET, .name = "set" },
+    { .id = ADD, .name = "add" },
+    { .id = MUL, .name = "mul" },
+    { .id = MOD, .name = "mod" },
+    { .id = JGZ, .name = "jgz" },
+    { .id = SND, .name = "snd" },
+    { .id = RCV, .name = "rcv" },
 };
 static const int cmdsize = sizeof cmd / sizeof *cmd;
 
 typedef struct instr {
-    pDict   op;
+    OpCode  op;
     int     r0, r1;
     int64_t v0, v1;
 } Instr, *pInstr;
@@ -51,36 +49,53 @@ struct list {
 
 typedef struct prog {
     int     pid, ip, tick, sent;
-    bool    waiting;
+    pList   mqhead, mqtail;
     int64_t reg[REGSIZE];
     Instr   mem[MEMSIZE];
-    pList   qhead, qtail;
 } Prog, *pProg;
 
-static Instr assemble(char *code)
+static inline OpCode name2id(const char * s)
 {
-    Instr ins = (Instr){NULL, -1, -1, -1, -1};
-    int i, field = 0;
+    for (size_t i = 0; i < cmdsize; ++i) {
+        if (!strcmp(cmd[i].name, s)) {
+            return cmd[i].id;
+        }
+    }
+    return NOP;
+}
+
+static inline char * id2name(const OpCode id)
+{
+    if (cmd[id].id == id) {
+        return cmd[id].name;
+    }
+    for (size_t i = 0; i < cmdsize; ++i) {
+        if (cmd[i].id == id) {
+            return cmd[i].name;
+        }
+    }
+    return NULL;
+}
+
+static inline Instr assemble(char *code)
+{
+    Instr ins = (Instr){NOP, -1, -1, 0, 0};  // if reg == -1 => use val
+    int field = 0;
     char *s = strtok(code, " ");
     while (s) {
         if (field == 0) {
-            for (i = 0; i < cmdsize; ++i) {
-                if (strcmp(cmd[i].name, s) == 0) {
-                    ins.op = &cmd[i];
-                    break;
-                }
-            }
+            ins.op = name2id(s);
         } else if (field == 1) {
-            if (*s >= 'a') {
+            if (*s >= REGBASE && *s <= REGSTOP) {
                 ins.r0 = *s - REGBASE;
             } else {
-                ins.v0 = atoll(s);
+                ins.v0 = atoll(s);  // leave r0 = -1
             }
         } else if (field == 2) {
-            if (*s >= 'a') {
+            if (*s >= REGBASE && *s <= REGSTOP) {
                 ins.r1 = *s - REGBASE;
             } else {
-                ins.v1 = atoll(s);
+                ins.v1 = atoll(s);  // leave r1 = -1
             }
         }
         ++field;
@@ -89,73 +104,84 @@ static Instr assemble(char *code)
     return ins;
 }
 
-static void load(pProg p, int id)
+// Init & load program p, use program q as source if provided
+static void load(pProg p, pProg q)
 {
-    p->pid     = id;
-    p->ip      = 0;
-    p->tick    = 0;
-    p->sent    = 0;
-    p->waiting = false;
-    p->qhead   = NULL;
-    p->qtail   = NULL;
+    // Runtime
+    p->pid    = 0;
+    p->ip     = 0;
+    p->tick   = 0;
+    p->sent   = 0;
+    p->mqhead = NULL;
+    p->mqtail = NULL;
 
+    // Registers
     for (int i = 0; i < REGSIZE; ++i) {
         p->reg[i] = 0;
     }
-    p->reg['p' - REGBASE] = id;
 
-    FILE *f = fopen("18.txt", "r");
-    if (f == NULL) {
-        fprintf(stderr, "File not found");
-        exit(1);
+    // Program
+    if (q) {
+        p->pid = 1;
+        p->reg['p' - REGBASE] = 1;
+        memcpy(p->mem, q->mem, sizeof(q->mem));
+    } else {
+        FILE *f = fopen("18.txt", "r");
+        if (f == NULL) {
+            fprintf(stderr, "File not found");
+            exit(1);
+        }
+        char *buf = NULL;
+        size_t buflen = 0, line = 0;
+        ssize_t len;
+        while ((len = getline(&buf, &buflen, f) > 0) && line < MEMSIZE) {
+            p->mem[line++] = assemble(buf);
+        }
+        fclose(f);
+        free(buf);
     }
-    char *buf = NULL;
-    size_t buflen = 0, line = 0;
-    ssize_t len;
-    while ((len = getline(&buf, &buflen, f) > 0) && line < MEMSIZE) {
-        p->mem[line++] = assemble(buf);
-    }
-    fclose(f);
-    free(buf);
 }
 
 static void print(pProg p, int listing)
 {
     int i;
     int64_t k;
-    pList q;
+    pList mq;
 
-    printf("Program ID : %i\n", p->pid);
-    printf("Instr Pntr : %i\n", p->ip);
-    printf("Clock Tick : %i\n", p->tick);
-    printf("Send Count : %i\n", p->sent);
-    printf("Waiting?   : %c\n", p->waiting ? 'Y' : 'N');
+    // Runtime parameters
+    printf("PID  : %i\n", p->pid);
+    printf("IP   : %i\n", p->ip);
+    printf("Tick : %i\n", p->tick);
+    printf("Sent : %i\n", p->sent);
     for (i = 0; i < REGSIZE; ++i) {
         if ((k = p->reg[i]) != 0) {
-            printf("Register %c : %lli\n", REGBASE + i, k);
+            printf("Rg %c : %lli\n", REGBASE + i, k);
         }
     }
-    printf("Message Q  :");
+
+    // Message queue
+    printf("MsgQ :");
     i = 0;
-    q = p->qhead;
-    while (q) {
-        printf(" %lli", q->val);
-        q = q->next;
+    mq = p->mqhead;
+    while (mq) {
+        printf(" %lli", mq->val);
+        mq = mq->next;
         ++i;
     }
     printf(" (len=%i)\n", i);
+
+    // Program listing
     if (listing) {
         for (i = 0; i < MEMSIZE; ++i) {
-            if (p->mem[i].op != NULL && p->mem[i].op->id != NOP) {
-                printf("  %2i: %s", i, p->mem[i].op->name);
-                if (p->mem[i].op->param > 0) {
-                    if (p->mem[i].r0 != -1) {
-                        printf(" %c", REGBASE + p->mem[i].r0);
-                    } else {
-                        printf(" %lli", p->mem[i].v0);
-                    }
+            printf("  %2i: ", i);
+            if (p->mem[i].op != NOP) {
+                printf("%s", id2name(p->mem[i].op));
+                if (p->mem[i].r0 != -1) {
+                    printf(" %c", REGBASE + p->mem[i].r0);
+                } else {
+                    printf(" %lli", p->mem[i].v0);
                 }
-                if (p->mem[i].op->param > 1) {
+                if (p->mem[i].op != SND && p->mem[i].op != RCV) {
                     if (p->mem[i].r1 != -1) {
                         printf(" %c", REGBASE + p->mem[i].r1);
                     } else {
@@ -163,94 +189,80 @@ static void print(pProg p, int listing)
                     }
                 }
                 printf("\n");
+            } else {
+                printf("?\n");
             }
         }
     }
     printf("\n");
 }
 
+// Run program p, use program q as message queue
 static void run(pProg p, pProg q, int part)
 {
-    pList pl;
-    while (p->ip >= 0 && p->ip < MEMSIZE && (!p->waiting || (q && q->qhead))) {
+    pList mq;
+    while (p->ip >= 0 && p->ip < MEMSIZE) {
         pInstr i = &(p->mem[p->ip]);
-        if (i->op->param > 0 && i->r0 >= 0) {
+        if (i->r0 != -1) {
             i->v0 = p->reg[i->r0];
         }
-        if (i->op->param > 1 && i->r1 >= 0) {
+        if (i->r1 != -1) {
             i->v1 = p->reg[i->r1];
         }
-        switch (i->op->id) {
-            case NOP:
-                p->ip++;
-                p->tick++;
-                break;
-            case SET:
-                p->reg[i->r0] = i->v1;
-                p->ip++;
-                p->tick++;
-                break;
-            case ADD:
-                p->reg[i->r0] += i->v1;
-                p->ip++;
-                p->tick++;
-                break;
-            case MUL:
-                p->reg[i->r0] *= i->v1;
-                p->ip++;
-                p->tick++;
-                break;
-            case MOD:
-                p->reg[i->r0] %= i->v1;
-                p->ip++;
-                p->tick++;
-                break;
-            case JGZ:
-                if (i->v0 > 0) {
-                    p->ip += i->v1;
+        switch (i->op) {
+        case SET:
+            p->reg[i->r0] = i->v1;
+            break;
+        case ADD:
+            p->reg[i->r0] += i->v1;
+            break;
+        case MUL:
+            p->reg[i->r0] *= i->v1;
+            break;
+        case MOD:
+            p->reg[i->r0] %= i->v1;
+            break;
+        case JGZ:
+            if (i->v0 > 0) {
+                p->ip += i->v1 - 1;  // compensate for ip++ at end of loop
+            }
+            break;
+        case SND:
+            if ((mq = (pList)malloc(sizeof(List)))) {
+                mq->val = i->v0;
+                mq->next = NULL;
+                if (p->mqhead) {  // only check head because tail is never reset to NULL
+                    p->mqtail->next = mq;
                 } else {
-                    p->ip++;
+                    p->mqhead = mq;
                 }
-                p->tick++;
-                break;
-            case SND:
-                pl = (pList)malloc(sizeof(List));
-                if (pl) {
-                    pl->val = i->v0;
-                    pl->next = NULL;
-                    if (p->qtail) {
-                        p->qtail->next = pl;
-                        p->qtail = pl;
-                    } else {
-                        p->qhead = pl;
-                        p->qtail = pl;
-                    }
-                }
-                p->ip++;
-                p->tick++;
-                p->sent++;
-                break;
-            case RCV:
-                if (part == 1) {
-                    if (i->v0 == 0) {
-                        p->ip++;
-                        p->tick++;
-                    } else {
-                        p->waiting = true;
-                    }
-                } else if (part == 2) {
-                    if (q && (pl = q->qhead)) {
-                        p->reg[i->r0] = pl->val;
-                        q->qhead = pl->next;
-                        free(pl);
-                        p->ip++;
-                        p->tick++;
-                    } else {
-                        p->waiting = true;
-                    }
+                p->mqtail = mq;
+            }
+            p->sent++;
+            break;
+        case RCV:
+            switch (part) {
+            case 1:
+                if (i->v0) {
+                    return;
                 }
                 break;
+            case 2:
+                if ((mq = q->mqhead)) {
+                    p->reg[i->r0] = mq->val;
+                    q->mqhead = mq->next;  // NB: tail is never reset to NULL
+                    free(mq);
+                } else {
+                    return;
+                }
+                break;
+            }
+            break;
+        case NOP:
+            break;
         }
+        p->ip++;
+        p->tick++;
     }
 }
 
@@ -259,31 +271,26 @@ int main(void)
     Prog p, q;
 
     // Part 1
-    load(&p, 0);
+    load(&p, NULL);
     run(&p, NULL, 1);
-    print(&p, 0);  // debug
-    printf("Part 1: %lli\n\n", p.qtail ? p.qtail->val : -1);
+    // print(&p, 0);  // debug
+    printf("Part 1: %lli\n", p.mqtail->val);
 
     // Part 2
-    load(&q, 1);
-    while (!(p.waiting && q.waiting)) {
+    load(&q, &p);
+    while (p.mqhead) {
         run(&q, &p, 2);
         run(&p, &q, 2);
     }
-    print(&p, 0);  // debug
-    print(&q, 0);  // debug
+    // printf("\n"); print(&p, 0);  // debug
+    // print(&q, 0);  // debug
     printf("Part 2: %i\n", q.sent);
 
-    // Clean up
-    while (p.qhead) {
-        pList t = p.qhead->next;
-        free(p.qhead);
-        p.qhead = t;
-    }
-    while (q.qhead) {
-        pList t = q.qhead->next;
-        free(q.qhead);
-        q.qhead = t;
+    // Clean up (should not be necessary)
+    while (q.mqhead) {
+        pList t = q.mqhead->next;
+        free(q.mqhead);
+        q.mqhead = t;
     }
     return 0;
 }
