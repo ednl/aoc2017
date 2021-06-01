@@ -1,18 +1,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <string.h>
 
 #define MEMSIZE (41)
 #define REGBASE ('a')
 #define REGSTOP ('z')
 #define REGSIZE (REGSTOP - REGBASE + 1)
-
-typedef enum runstate {
-    READY,
-    RUN,
-    WAIT,
-} RunState;
 
 typedef enum opcode {
     NOP = -1,
@@ -55,11 +50,11 @@ struct list {
 };
 
 typedef struct prog {
-    int      pid, ip, tick, sent;
-    RunState state;  // 0=ready, 1=running, 2=waiting
-    int64_t  reg[REGSIZE];
-    Instr    mem[MEMSIZE];
-    pList    qhead, qtail;
+    int     pid, ip, tick, sent;
+    bool    waiting;
+    int64_t reg[REGSIZE];
+    Instr   mem[MEMSIZE];
+    pList   qhead, qtail;
 } Prog, *pProg;
 
 static Instr assemble(char *code)
@@ -96,13 +91,13 @@ static Instr assemble(char *code)
 
 static void load(pProg p, int id)
 {
-    p->pid   = id;
-    p->ip    = 0;
-    p->tick  = 0;
-    p->sent  = 0;
-    p->state = READY;
-    p->qhead = NULL;
-    p->qtail = NULL;
+    p->pid     = id;
+    p->ip      = 0;
+    p->tick    = 0;
+    p->sent    = 0;
+    p->waiting = false;
+    p->qhead   = NULL;
+    p->qtail   = NULL;
 
     for (int i = 0; i < REGSIZE; ++i) {
         p->reg[i] = 0;
@@ -134,7 +129,7 @@ static void print(pProg p, int listing)
     printf("Instr Pntr : %i\n", p->ip);
     printf("Clock Tick : %i\n", p->tick);
     printf("Send Count : %i\n", p->sent);
-    printf("Run State  : %i (0=ready 1=running 2=waiting)\n", p->state);
+    printf("Waiting?   : %c\n", p->waiting ? 'Y' : 'N');
     for (i = 0; i < REGSIZE; ++i) {
         if ((k = p->reg[i]) != 0) {
             printf("Register %c : %lli\n", REGBASE + i, k);
@@ -174,14 +169,10 @@ static void print(pProg p, int listing)
     printf("\n");
 }
 
-static int run(pProg p, pProg q, int part)
+static void run(pProg p, pProg q, int part)
 {
     pList pl;
-    int clock = p->tick;
-    if (p->state == READY) {
-        p->state = RUN;
-    }
-    while (p->ip >= 0 && p->ip < MEMSIZE && (p->state != WAIT || (q != NULL && q->qhead != NULL))) {
+    while (p->ip >= 0 && p->ip < MEMSIZE && (!p->waiting || (q && q->qhead))) {
         pInstr i = &(p->mem[p->ip]);
         if (i->op->param > 0 && i->r0 >= 0) {
             i->v0 = p->reg[i->r0];
@@ -227,11 +218,11 @@ static int run(pProg p, pProg q, int part)
                 if (pl) {
                     pl->val = i->v0;
                     pl->next = NULL;
-                    if (p->qhead == NULL) {
-                        p->qhead = pl;
+                    if (p->qtail) {
+                        p->qtail->next = pl;
                         p->qtail = pl;
                     } else {
-                        p->qtail->next = pl;
+                        p->qhead = pl;
                         p->qtail = pl;
                     }
                 }
@@ -241,48 +232,43 @@ static int run(pProg p, pProg q, int part)
                 break;
             case RCV:
                 if (part == 1) {
-                    if (i->v0 != 0) {
-                        p->state = WAIT;
-                    } else {
+                    if (i->v0 == 0) {
                         p->ip++;
                         p->tick++;
+                    } else {
+                        p->waiting = true;
                     }
                 } else if (part == 2) {
-                    if (q != NULL && (pl = q->qhead) != NULL) {
+                    if (q && (pl = q->qhead)) {
                         p->reg[i->r0] = pl->val;
                         q->qhead = pl->next;
                         free(pl);
                         p->ip++;
                         p->tick++;
                     } else {
-                        p->state = WAIT;
+                        p->waiting = true;
                     }
                 }
                 break;
         }
     }
-    if (p->state == RUN) {
-        p->state = READY;
-    }
-    return p->tick - clock;
 }
 
 int main(void)
 {
-    int t0 = 0, t1 = 0;
     Prog p, q;
 
     // Part 1
     load(&p, 0);
-    t0 = run(&p, NULL, 1);
+    run(&p, NULL, 1);
     print(&p, 0);  // debug
     printf("Part 1: %lli\n\n", p.qtail ? p.qtail->val : -1);
 
     // Part 2
     load(&q, 1);
-    while (t0 || t1) {
-        t1 = run(&q, &p, 2);
-        t0 = run(&p, &q, 2);
+    while (!(p.waiting && q.waiting)) {
+        run(&q, &p, 2);
+        run(&p, &q, 2);
     }
     print(&p, 0);  // debug
     print(&q, 0);  // debug
