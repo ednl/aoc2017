@@ -275,8 +275,8 @@ int main(void)
     // Part 1
     load(&p, NULL);
     run(&p, NULL, 1);
-    // print(&p, 0);  // debug
-    printf("Part 1: %lli\n", p.mqtail->val);
+    print(&p, 0);  // debug
+    printf("Part 1: %lli\n\n", p.mqtail->val);
 
     // Part 2
     load(&q, &p);
@@ -284,8 +284,8 @@ int main(void)
         run(&q, &p, 2);
         run(&p, &q, 2);
     }
-    // printf("\n"); print(&p, 0);  // debug
-    // print(&q, 0);  // debug
+    print(&p, 0);  // debug
+    print(&q, 0);  // debug
     printf("Part 2: %i\n", q.sent);
 
     // Clean up (should not be necessary)
