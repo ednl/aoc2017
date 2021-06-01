@@ -1,7 +1,8 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <stdint.h>
-#include <string.h>
+#include <stdio.h>     // printf
+#include <stdlib.h>    // malloc, free
+#include <stdint.h>    // int64_t
+#include <inttypes.h>  // PRIi64
+#include <string.h>    // strtok, memcpy
 
 #define MEMSIZE (41)
 #define REGBASE ('a')
@@ -16,7 +17,7 @@ typedef enum opcode {
     JGZ,
     SND,
     RCV,
-    NOP,  // invalid opcode
+    NOP,  // unknown/invalid opcode
 } OpCode;
 
 typedef struct dict {
@@ -155,7 +156,7 @@ static void print(pProg p, int listing)
     printf("Sent : %i\n", p->sent);
     for (i = 0; i < REGSIZE; ++i) {
         if ((k = p->reg[i]) != 0) {
-            printf("Rg %c : %lli\n", REGBASE + i, k);
+            printf("Rg %c : %"PRIi64"\n", REGBASE + i, k);
         }
     }
 
@@ -179,13 +180,13 @@ static void print(pProg p, int listing)
                 if (p->mem[i].r0 != -1) {
                     printf(" %c", REGBASE + p->mem[i].r0);
                 } else {
-                    printf(" %lli", p->mem[i].v0);
+                    printf(" %"PRIi64, p->mem[i].v0);
                 }
                 if (p->mem[i].op != SND && p->mem[i].op != RCV) {
                     if (p->mem[i].r1 != -1) {
                         printf(" %c", REGBASE + p->mem[i].r1);
                     } else {
-                        printf(" %lli", p->mem[i].v1);
+                        printf(" %"PRIi64, p->mem[i].v1);
                     }
                 }
                 printf("\n");
@@ -275,8 +276,8 @@ int main(void)
     // Part 1
     load(&p, NULL);
     run(&p, NULL, 1);
-    print(&p, 0);  // debug
-    printf("Part 1: %lli\n\n", p.mqtail->val);
+    print(&p, 0);
+    printf("Part 1: %"PRIi64"\n\n", p.mqtail->val);
 
     // Part 2
     load(&q, &p);
@@ -284,8 +285,8 @@ int main(void)
         run(&q, &p, 2);
         run(&p, &q, 2);
     }
-    print(&p, 0);  // debug
-    print(&q, 0);  // debug
+    print(&p, 0);
+    print(&q, 0);
     printf("Part 2: %i\n", q.sent);
 
     // Clean up (should not be necessary)
