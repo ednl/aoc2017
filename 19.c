@@ -2,10 +2,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define DIM (201)
-#define LEN (50)
+#define DIM (201)  // width & height of the array in the puzzle file
+#define LEN  (27)  // probably enough to hold all letters
 
-static char diag[DIM][DIM + 1] = {0};
+static char diag[DIM][DIM + 1] = {0};  // diagram + \0 as EOL
 
 static void load(void)
 {
@@ -27,43 +27,47 @@ static void load(void)
 int main(void)
 {
     char part1[LEN] = {0};
-    size_t part1len = 0;
-    int part2 = 1;
+    size_t len = 0;
+    int part2 = 1;  // first pipe counts, too
+    int i = 0, j = 0, dir;  // coordinates and step -1/+1
 
     load();
-    int i = 0, j = 0;
-    while (diag[i][j] && diag[i][j] != '|') {
+    // Find the start of the pipe on the top line
+    while (diag[i][j] == ' ') {
         ++j;
     }
 
-    int d;
     while(1) {
-        d = i == 0 || diag[i - 1][j] == ' ' ? 1 : -1;
-        if (diag[i + d][j] == ' ') {
-            break;
+        // Go up (-1) or go down (+1)
+        dir = i == 0 || diag[i - 1][j] == ' ' ? 1 : -1;
+        if (diag[i + dir][j] == ' ') {
+            break;  // nowhere left to go
         }
-        while (diag[i + d][j] != ' ') {
-            i += d;
+        // Go vertically until the next char is a space
+        while (diag[i + dir][j] != ' ') {
+            i += dir;
             if (diag[i][j] >= 'A' && diag[i][j] <= 'Z') {
-                part1[part1len++] = diag[i][j];
+                part1[len++] = diag[i][j];  // save letter
             }
-            ++part2;
+            ++part2;  // count steps
         }
 
-        d = j == 0 || diag[i][j - 1] == ' ' ? 1 : -1;
-        if (diag[i][j + d] == ' ') {
-            break;
+        // Go left (-1) or go right (+1)
+        dir = j == 0 || diag[i][j - 1] == ' ' ? 1 : -1;
+        if (diag[i][j + dir] == ' ') {
+            break;  // nowhere left to go
         }
-        while (diag[i][j + d] != ' ') {
-            j += d;
+        // Go horizontally until the next char is a space
+        while (diag[i][j + dir] != ' ') {
+            j += dir;
             if (diag[i][j] >= 'A' && diag[i][j] <= 'Z') {
-                part1[part1len++] = diag[i][j];
+                part1[len++] = diag[i][j];  // save letter
             }
-            ++part2;
+            ++part2;  // count steps
         }
     }
 
     printf("Part 1: %s\n", part1);
-    printf("Part 2: %i\n", part2);
+    printf("Part 2: %d\n", part2);
     return 0;
 }
