@@ -2,24 +2,49 @@
 #include <stdlib.h>    // abs, exit
 #include <math.h>      // fabs, sqrt
 
-#define DIM       (3)
-#define N      (1000)
-#define COLMAX (2000)
+#define DIM        (3)
+#define PARTICLESZ (1000)
+#define COLPAIRSZ  (2000)
 
 typedef struct particle {
     int acc[DIM], vel[DIM], pos[DIM];
     int col;
     int ord;
 } Particle;
-
-static Particle cloud[N] = {0};
+static Particle particles[PARTICLESZ] = {0};
 
 typedef struct colpair {
     int t;
     int n1, n2;
 } ColPair;
+static ColPair colpairs[COLPAIRSZ] = {0};
 
-static ColPair cols[COLMAX] = {0};
+// Read puzzle input
+static int load(void)
+{
+    FILE *f = fopen("20.txt", "r");
+    if (f == NULL) {
+        fprintf(stderr, "File not found");
+        exit(1);
+    }
+    int n = 0;
+    Particle p = {0};
+    while (fscanf(f, "p=<%d,%d,%d>, v=<%d,%d,%d>, a=<%d,%d,%d> ",
+        &p.pos[0], &p.pos[1], &p.pos[2],
+        &p.vel[0], &p.vel[1], &p.vel[2],
+        &p.acc[0], &p.acc[1], &p.acc[2]) == 9) {
+        if (n == PARTICLESZ) {
+            fprintf(stderr, "particles[] too small\n");
+            fclose(f);
+            exit(2);
+        }
+        p.col = -1;  // never
+        p.ord = n;
+        particles[n++] = p;
+    }
+    fclose(f);
+    return n;
+}
 
 // Add vector to vector
 static inline void addv(int *r, const int *a, const int *b)
@@ -50,57 +75,29 @@ static inline int manh(const int *a)
 static int cmp1(const void *a, const void *b)
 {
     const Particle *p = (const Particle *)a, *q = (const Particle *)b;
-    int n = manh(p->acc);
-    int m = manh(q->acc);
-    if (n == m) {
+    int n = manh(p->acc) - manh(q->acc);
+    if (n == 0) {
         int t[DIM];
         muls(t, p->vel, 2);
         addv(t, p->acc, t);
         n = manh(t);
         muls(t, q->vel, 2);
         addv(t, q->acc, t);
-        m = manh(t);
-        if (n == m) {
-            n = manh(p->pos);
-            m = manh(q->pos);
-            if (n == m) {
-                return 0;
-            }
+        n -= manh(t);
+        if (n == 0) {
+            return manh(p->pos) - manh(q->pos);
         }
     }
-    return n < m ? -1 : 1;
+    return n;
 }
 
-// Sort particles by ordinal
+// Sort particles by ordinal (= reset previous sort)
 static int cmp2(const void *a, const void *b)
 {
     return ((const Particle *)a)->ord - ((const Particle *)b)->ord;
 }
 
-static int load(void)
-{
-    FILE *f = fopen("20.txt", "r");
-    if (f == NULL) {
-        fprintf(stderr, "File not found");
-        exit(1);
-    }
-    int n = 0;
-    Particle p = {0};
-    while (n < N && 9 == fscanf(f,
-        "p=<%d,%d,%d>, "
-        "v=<%d,%d,%d>, "
-        "a=<%d,%d,%d> ",
-        &p.pos[0], &p.pos[1], &p.pos[2],
-        &p.vel[0], &p.vel[1], &p.vel[2],
-        &p.acc[0], &p.acc[1], &p.acc[2])) {
-        p.col = -1;  // never
-        p.ord = n;
-        cloud[n++] = p;
-    }
-    fclose(f);
-    return n;
-}
-
+// Return non-negative integer equal to a, or -1
 static inline int nonnegint(double a)
 {
     double b = round(a);
@@ -108,67 +105,62 @@ static inline int nonnegint(double a)
     return i >= 0 ? i : -1;
 }
 
+// Does new time solution t fit with previous solutions a and b?
+// If not, return -1
 static inline int check1(int a, int b, int t)
 {
     return t >= 0 && (t == a || t == b || a == -2) ? t : -1;
 }
 
+// Do new time solutions t1,t2 fit with previous solutions a and b?
+// If not, set a and b to -1
 static void check2(int *a, int *b, int t1, int t2)
 {
-    if (t1 < 0 && t2 < 0) {
+    if (t1 < 0 && t2 < 0) {              // no collision possible
         *a = *b = -1;
-    } else if (t1 < 0) {
+    } else if (t1 < 0) {                 // collision possible at t2
         *a = *b = check1(*a, *b, t2);
-    } else if (t2 < 0 || t1 == t2) {
+    } else if (t2 < 0 || t1 == t2) {     // collision possible at t1
         *a = *b = check1(*a, *b, t1);
-    } else if (*a == -2) {
-        if (t1 < t2) {
-            *a = t1;
-            *b = t2;
-        } else {
-            *a = t2;
-            *b = t1;
-        }
-    } else if (*a == t1 && *b != t2) {
-        *b = t1;
-    } else if (*a == t2 && *b != t1) {
-        *b = t2;
-    } else if (*b == t1 && *a != t2) {
+    } else if (*a == -2) {               // no previous restrictions
         *a = t1;
-    } else if (*b == t2 && *a != t1) {
-        *a = t2;
-    } else if (!((*a == t1 && *b == t2) || (*a == t2 && *b == t1))) {
+        *b = t2;
+    } else if ((*a == t1 && *b != t2) || (*b == t1 && *a != t2)) {  // t1 was a previous solution but t2 was not
+        *a = *b = t1;
+    } else if ((*a == t2 && *b != t1) || (*b == t2 && *a != t1)) {  // t2 was a previous solution but t1 was not
+        *a = *b = t2;
+    } else if (!((*a == t1 && *b == t2) || (*a == t2 && *b == t1))) {  // neither t1 nor t2 were previous solutions
         *a = *b = -1;
     }
 }
 
-// Returns earliest time of collision (<0 = no collision)
-// p1(t) = p2(t)
+// Returns earliest time of collision (no collision = -1)
+//     p1(t) = p2(t)
 // <=> p1 + v1.t + a1.t.(t+1)/2 = p2 + v2.t + a2.t.(t+1)/2
 // <=> p1 + (v1 + a1/2).t + a1.t.t/2 = p2 + (v2 + a2/2).t + a2.t.t/2
 // <=> (a1 - a2)/2.t.t + (v1 - v2 + (a1 - a2)/2).t + (p1 - p2) = 0
-// <=> (a1 - a2).t.t + (2.(v1 - v2) + (a1 - a2)).t + 2.(p1 - p2) = 0
 // <=> t.t + (2.(v1 - v2)/(a1 - a2) + 1).t + 2.(p1 - p2)/(a1 - a2) = 0
-
+//     (Coefficients may be fractions, integer solutions still possible!)
 // (a1 - a2) == 0
 //    => (v1 - v2).t + (p1 - p2) = 0
 //   (v1 - v2) == 0
 //      => (p1 - p2) == 0 ? all t : no t
 //   (v1 - v2) != 0
 //      => t = -(p1 - p2)/(v1 - v2)
-
 // (a1 - a2) != 0
-//    => "a" = (a1 - a2)
-//       "b" = 2.(v1 - v2) + (a1 - a2)
-//       "c" = 2.(p1 - p2)
-//       "D" = b.b - 4.a.c = (2.(v1 - v2) + (a1 - a2))^2 - 8.(a1 - a2).(p1 - p2)
-//   D < 0
+//    => "a" = 1
+//       "b" = 2.(v1 - v2)/(a1 - a2) + 1
+//       "c" = 2.(p1 - p2)/(a1 - a2)
+//       "m" = -b/2 = (v2 - v1)/(a1 - a2) - 0.5
+//       "D" = b.b - 4.a.c = 4.p.p - 4.c = (p.p - c).4
+//       "E" = D/4 = m.m - c
+//   E < 0
 //      => no t
-//   D == 0
-//      => t = -b/(2.a) = -(2.(v1 - v2) + (a1 - a2))/(2.(a1 - a2))
-//   D > 0
-//      => t0 = (-b - sqrt(D))/(2.a)
-//         t1 = (-b + sqrt(D))/(2.a)
+//   E == 0
+//      => t = -b/(2.a) = m
+//   E > 0
+//      => t0 = (-b - sqrt(D))/(2.a) = m - sqrt(E)
+//         t1 = (-b + sqrt(D))/(2.a) = m + sqrt(E)
 static int collide(const Particle *p1, const Particle *p2)
 {
     int t0 = -2, t1 = -2;  // -2=all -1=none
@@ -189,15 +181,14 @@ static int collide(const Particle *p1, const Particle *p2)
                 t0 = t1 = check1(t0, t1, dp / dv);
             }
         } else {
-            // double a = 1;
-            double b = (double)dv / da - 0.5;  // = -b/2a
-            double c = (double)(dp * 2) / da;  // = c/a
-            double D = b * b - c;              // = D/4
-            if (fabs(D) < 0.000001) {          // discriminant == 0
-                t0 = t1 = check1(t0, t1, nonnegint(b));
-            } else if (D > 0) {
-                double root = sqrt(D);         // = sqrt(D)/2
-                check2(&t0, &t1, nonnegint(b - root), nonnegint(b + root));
+            double m = (double)dv / da - 0.5;  // = -b/2
+            double c = (double)(dp * 2) / da;  // = c
+            double E = m * m - c;              // = D/4
+            if (fabs(E) < 0.000001) {          // discriminant == 0
+                t0 = t1 = check1(t0, t1, nonnegint(m));
+            } else if (E > 0) {
+                double root = sqrt(E);         // = sqrt(D)/2
+                check2(&t0, &t1, nonnegint(m - root), nonnegint(m + root));
             } else {
                 return -1;
             }
@@ -209,18 +200,18 @@ static int collide(const Particle *p1, const Particle *p2)
     return t0 == -2 ? 0 : t0;  // but t0 is never -2 for my puzzle input
 }
 
+// Sort collision pairs by time, ord1, ord2
 static int cmpcol(const void *a, const void *b)
 {
     const ColPair *p = (const ColPair *)a, *q = (const ColPair *)b;
-    int i = p->t - q->t;
-    if (i == 0) {
-        int j = p->n1 - q->n1;
-        if (j == 0) {
+    int d = p->t - q->t;
+    if (d == 0) {
+        d = p->n1 - q->n1;
+        if (d == 0) {
             return p->n2 - q->n2;
         }
-        return j;
     }
-    return i < 0 ? -1 : 1;
+    return d < 0 ? -1 : 1;
 }
 
 int main(void)
@@ -228,51 +219,52 @@ int main(void)
     int particlecount = load();
 
     // Part 1
-    qsort(cloud, (size_t)particlecount, sizeof(Particle), cmp1);
-    printf("Part 1: %d\n", cloud[0].ord);
+    qsort(particles, (size_t)particlecount, sizeof(Particle), cmp1);
+    printf("Part 1: %d\n", particles[0].ord);
 
-    // Reset particle order => cloud[i].n == i
-    qsort(cloud, (size_t)particlecount, sizeof(Particle), cmp2);
+    // Reset order => particles[i].n == i
+    qsort(particles, (size_t)particlecount, sizeof(Particle), cmp2);
 
     // Part 2
     int colcount = 0;
     for (int i = 0; i < particlecount - 1; ++i) {
         for (int j = i + 1; j < particlecount; ++j) {
-            int t = collide(&cloud[i], &cloud[j]);
-            if (colcount == COLMAX) {
-                printf("cols[] too small\n");
-                exit(2);
-            }
-            if (t >= 0 && colcount < COLMAX) {
-                cols[colcount++] = (ColPair){
+            int t = collide(&particles[i], &particles[j]);
+            if (t >= 0) {
+                if (colcount == COLPAIRSZ) {
+                    fprintf(stderr, "colpairs[] too small\n");
+                    exit(3);
+                }
+                colpairs[colcount++] = (ColPair){
                     .t = t,
-                    .n1 = cloud[i].ord,
-                    .n2 = cloud[j].ord,
+                    .n1 = particles[i].ord,
+                    .n2 = particles[j].ord,
                 };
             }
         }
     }
+    // printf("Collision pairs: %d\n", colcount);  // debug
 
-    // Sort collisions by ascending time, first ord, second ord
-    qsort(cols, (size_t)colcount, sizeof(ColPair), cmpcol);
+    // Sort collisions by ascending time, ord1, ord2
+    qsort(colpairs, (size_t)colcount, sizeof(ColPair), cmpcol);
 
-    // Strike out particles which collided
+    // Strike out particle pairs that collided, but only if they haven't collided yet
     for (int i = 0; i < colcount; ++i) {
-        Particle *p1 = &cloud[cols[i].n1];
-        Particle *p2 = &cloud[cols[i].n2];
-        int t = cols[i].t;
+        int t = colpairs[i].t;
+        Particle *p1 = &particles[colpairs[i].n1];
+        Particle *p2 = &particles[colpairs[i].n2];
+        // Never collided before or just collided on this same time
         if ((p1->col < 0 || p1->col == t) && (p2->col < 0 || p2->col == t)) {
             p1->col = p2->col = t;
         }
     }
 
+    // Count remaining particles
     int alive = 0;
     for (int i = 0; i < particlecount; ++i) {
-        alive += (cloud[i].col < 0);
+        alive += (particles[i].col < 0);
     }
-
-    // Right answer = 438 for my puzzle input
-    printf("Part 2: %d\n", alive);
+    printf("Part 2: %d\n", alive);  // right answer = 438 for my puzzle input
 
     return 0;
 }
