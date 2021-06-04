@@ -1,32 +1,28 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <stdint.h>
-#include <inttypes.h>
-// #include <limits.h>
-#include <stdbool.h>
-#include <math.h>
+#include <stdio.h>     // printf, scanf
+#include <stdlib.h>    // abs, exit
+#include <math.h>      // fabs, sqrt
 
 #define DIM       (3)
 #define N      (1000)
 #define COLMAX (2000)
 
 typedef struct particle {
-    int64_t acc[DIM], vel[DIM], pos[DIM];
-    int64_t col;
+    int acc[DIM], vel[DIM], pos[DIM];
+    int col;
     int ord;
 } Particle;
 
 static Particle cloud[N] = {0};
 
 typedef struct colpair {
-    int64_t t;
+    int t;
     int n1, n2;
 } ColPair;
 
 static ColPair cols[COLMAX] = {0};
 
 // Add vector to vector
-static inline void addv(int64_t *r, const int64_t *a, const int64_t *b)
+static inline void addv(int *r, const int *a, const int *b)
 {
     for (size_t i = 0; i < DIM; ++i) {
         r[i] = a[i] + b[i];
@@ -34,7 +30,7 @@ static inline void addv(int64_t *r, const int64_t *a, const int64_t *b)
 }
 
 // Multiply vector by scalar
-static inline void muls(int64_t *r, const int64_t *a, const int n)
+static inline void muls(int *r, const int *a, const int n)
 {
     for (size_t i = 0; i < DIM; ++i) {
         r[i] = a[i] * n;
@@ -42,9 +38,9 @@ static inline void muls(int64_t *r, const int64_t *a, const int n)
 }
 
 // Manhattan distance
-static inline int64_t manh(const int64_t *a)
+static inline int manh(const int *a)
 {
-    return llabs(a[0]) + llabs(a[1]) + llabs(a[2]);
+    return abs(a[0]) + abs(a[1]) + abs(a[2]);
 }
 
 // Sort particles by acceleration, then speed + half acc., then position
@@ -54,10 +50,10 @@ static inline int64_t manh(const int64_t *a)
 static int cmp1(const void *a, const void *b)
 {
     const Particle *p = (const Particle *)a, *q = (const Particle *)b;
-    int64_t n = manh(p->acc);
-    int64_t m = manh(q->acc);
+    int n = manh(p->acc);
+    int m = manh(q->acc);
     if (n == m) {
-        int64_t t[DIM];
+        int t[DIM];
         muls(t, p->vel, 2);
         addv(t, p->acc, t);
         n = manh(t);
@@ -91,9 +87,9 @@ static int load(void)
     int n = 0;
     Particle p = {0};
     while (n < N && 9 == fscanf(f,
-        "p=<%"SCNd64",%"SCNd64",%"SCNd64">, "
-        "v=<%"SCNd64",%"SCNd64",%"SCNd64">, "
-        "a=<%"SCNd64",%"SCNd64",%"SCNd64"> ",
+        "p=<%d,%d,%d>, "
+        "v=<%d,%d,%d>, "
+        "a=<%d,%d,%d> ",
         &p.pos[0], &p.pos[1], &p.pos[2],
         &p.vel[0], &p.vel[1], &p.vel[2],
         &p.acc[0], &p.acc[1], &p.acc[2])) {
@@ -105,19 +101,19 @@ static int load(void)
     return n;
 }
 
-static inline int64_t nonnegint(double a)
+static inline int nonnegint(double a)
 {
     double b = round(a);
-    int64_t i = fabs(a - b) < 0.000001 ? (int64_t)b : -1;
+    int i = fabs(a - b) < 0.000001 ? (int)b : -1;
     return i >= 0 ? i : -1;
 }
 
-static inline int64_t check1(int64_t a, int64_t b, int64_t t)
+static inline int check1(int a, int b, int t)
 {
     return t >= 0 && (t == a || t == b || a == -2) ? t : -1;
 }
 
-static void check2(int64_t *a, int64_t *b, int64_t t1, int64_t t2)
+static void check2(int *a, int *b, int t1, int t2)
 {
     if (t1 < 0 && t2 < 0) {
         *a = *b = -1;
@@ -173,14 +169,14 @@ static void check2(int64_t *a, int64_t *b, int64_t t1, int64_t t2)
 //   D > 0
 //      => t0 = (-b - sqrt(D))/(2.a)
 //         t1 = (-b + sqrt(D))/(2.a)
-static int64_t collide(const Particle *p1, const Particle *p2)
+static int collide(const Particle *p1, const Particle *p2)
 {
-    int64_t t0 = -2, t1 = -2;  // -2=all -1=none
+    int t0 = -2, t1 = -2;  // -2=all -1=none
 
     for (int i = 0; i < DIM; ++i) {
-        int64_t da = p1->acc[i] - p2->acc[i];
-        int64_t dv = p2->vel[i] - p1->vel[i];  // -(v1 - v2) = (v2 - v1)
-        int64_t dp = p1->pos[i] - p2->pos[i];
+        int da = p1->acc[i] - p2->acc[i];
+        int dv = p2->vel[i] - p1->vel[i];  // -(v1 - v2) = (v2 - v1)
+        int dp = p1->pos[i] - p2->pos[i];
         if (da == 0) {
             if (dv == 0) {
                 if (dp != 0) {
@@ -216,7 +212,7 @@ static int64_t collide(const Particle *p1, const Particle *p2)
 static int cmpcol(const void *a, const void *b)
 {
     const ColPair *p = (const ColPair *)a, *q = (const ColPair *)b;
-    int64_t i = p->t - q->t;
+    int i = p->t - q->t;
     if (i == 0) {
         int j = p->n1 - q->n1;
         if (j == 0) {
@@ -242,7 +238,7 @@ int main(void)
     int colcount = 0;
     for (int i = 0; i < particlecount - 1; ++i) {
         for (int j = i + 1; j < particlecount; ++j) {
-            int64_t t = collide(&cloud[i], &cloud[j]);
+            int t = collide(&cloud[i], &cloud[j]);
             if (colcount == COLMAX) {
                 printf("cols[] too small\n");
                 exit(2);
@@ -264,7 +260,7 @@ int main(void)
     for (int i = 0; i < colcount; ++i) {
         Particle *p1 = &cloud[cols[i].n1];
         Particle *p2 = &cloud[cols[i].n2];
-        int64_t t = cols[i].t;
+        int t = cols[i].t;
         if ((p1->col < 0 || p1->col == t) && (p2->col < 0 || p2->col == t)) {
             p1->col = p2->col = t;
         }
