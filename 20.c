@@ -1,21 +1,22 @@
-#include <stdio.h>     // printf, scanf
-#include <stdlib.h>    // abs, exit
-#include <math.h>      // fabs, sqrt
+#include <stdio.h>   // printf, scanf
+#include <stdlib.h>  // abs, exit
+#include <math.h>    // round, fabs, sqrt
 
-#define DIM        (3)
-#define PARTICLESZ (1000)
-#define COLPAIRSZ  (2000)
+#define DIM        (3)     // x,y,z
+#define PARTICLESZ (1000)  // exact number of lines in my input
+#define COLPAIRSZ  (2000)  // actually about 1670 for my input
 
 typedef struct particle {
-    int acc[DIM], vel[DIM], pos[DIM];
-    int col;
-    int ord;
+    int acc[DIM], vel[DIM], pos[DIM]; // motion quantities
+    int col;  // collision time (initially: -1 = never)
+    int ord;  // ordinal number (= zero-based order in input file)
 } Particle;
 static Particle particles[PARTICLESZ] = {0};
 
+// Collision pairs
 typedef struct colpair {
-    int t;
-    int n1, n2;
+    int t;       // collision time
+    int n1, n2;  // particle numbers
 } ColPair;
 static ColPair colpairs[COLPAIRSZ] = {0};
 
@@ -125,45 +126,41 @@ static void check2(int *a, int *b, int t1, int t2)
     } else if (*a == -2) {               // no previous restrictions
         *a = t1;
         *b = t2;
-    } else if ((*a == t1 && *b != t2) || (*b == t1 && *a != t2)) {  // t1 was a previous solution but t2 was not
-        *a = *b = t1;
-    } else if ((*a == t2 && *b != t1) || (*b == t2 && *a != t1)) {  // t2 was a previous solution but t1 was not
-        *a = *b = t2;
+    } else if (*a == t1 && *b != t2) {  // t1 was a previous solution (a) but t2 was not
+        *b = t1;
+    } else if (*a == t2 && *b != t1) {  // t2 was a previous solution (a) but t1 was not
+        *b = t2;
+    } else if (*b == t1 && *a != t2) {  // t1 was a previous solution (b) but t2 was not
+        *a = t1;
+    } else if (*b == t2 && *a != t1) {  // t2 was a previous solution (b) but t1 was not
+        *a = t2;
     } else if (!((*a == t1 && *b == t2) || (*a == t2 && *b == t1))) {  // neither t1 nor t2 were previous solutions
         *a = *b = -1;
     }
 }
 
 // Returns earliest time of collision (no collision = -1)
-//     p1(t) = p2(t)
-// <=> p1 + v1.t + a1.t.(t+1)/2 = p2 + v2.t + a2.t.(t+1)/2
-// <=> p1 + (v1 + a1/2).t + a1.t.t/2 = p2 + (v2 + a2/2).t + a2.t.t/2
-// <=> (a1 - a2)/2.t.t + (v1 - v2 + (a1 - a2)/2).t + (p1 - p2) = 0
-// <=> t.t + (2.(v1 - v2)/(a1 - a2) + 1).t + 2.(p1 - p2)/(a1 - a2) = 0
+//       p1(t) = p2(t)
+//   <=> p1 + v1.t + a1.t.(t+1)/2 = p2 + v2.t + a2.t.(t+1)/2
+//   <=> p1 + (v1 + a1/2).t + a1.t.t/2 = p2 + (v2 + a2/2).t + a2.t.t/2
+//   <=> (a1 - a2)/2.t.t + (v1 - v2 + (a1 - a2)/2).t + (p1 - p2) = 0
+// Case 1: (a1 - a2) == 0 => (v1 - v2).t + (p1 - p2) = 0
+//     Case 1a: (v1 - v2) == 0 => all t if (p1 - p2) == 0 else no solution
+//     Case 1b: (v1 - v2) != 0 => t = -(p1 - p2)/(v1 - v2) if integer else no solution
+// Case 2: (a1 - a2) != 0 => t.t + (2.(v1 - v2)/(a1 - a2) + 1).t + 2.(p1 - p2)/(a1 - a2) = 0
 //     (Coefficients may be fractions, integer solutions still possible!)
-// (a1 - a2) == 0
-//    => (v1 - v2).t + (p1 - p2) = 0
-//   (v1 - v2) == 0
-//      => (p1 - p2) == 0 ? all t : no t
-//   (v1 - v2) != 0
-//      => t = -(p1 - p2)/(v1 - v2)
-// (a1 - a2) != 0
-//    => "a" = 1
-//       "b" = 2.(v1 - v2)/(a1 - a2) + 1
-//       "c" = 2.(p1 - p2)/(a1 - a2)
-//       "m" = -b/2 = (v2 - v1)/(a1 - a2) - 0.5
-//       "D" = b.b - 4.a.c = 4.p.p - 4.c = (p.p - c).4
-//       "E" = D/4 = m.m - c
-//   E < 0
-//      => no t
-//   E == 0
-//      => t = -b/(2.a) = m
-//   E > 0
-//      => t0 = (-b - sqrt(D))/(2.a) = m - sqrt(E)
-//         t1 = (-b + sqrt(D))/(2.a) = m + sqrt(E)
+//     "a" = 1
+//     "b" = 2.(v1 - v2)/(a1 - a2) + 1
+//     "m" = -b/2 = (v2 - v1)/(a1 - a2) - 0.5
+//     "c" = 2.(p1 - p2)/(a1 - a2)
+//     "D" = b.b - 4.a.c = 4.p.p - 4.c = (p.p - c).4
+//     "E" = D/4 = m.m - c
+//     Case 2a: E == 0 => t = -b/(2.a) = m
+//     Case 2b: E > 0  => t0,1 = (-b +- sqrt(D))/(2.a) = m +- sqrt(E)
+//     Case 2c: E < 0  => no solution
 static int collide(const Particle *p1, const Particle *p2)
 {
-    int t0 = -2, t1 = -2;  // -2=all -1=none
+    int t0 = -2, t1 = -2;  // -2=always overlap, -1=never collide
 
     for (int i = 0; i < DIM; ++i) {
         int da = p1->acc[i] - p2->acc[i];
@@ -178,23 +175,27 @@ static int collide(const Particle *p1, const Particle *p2)
                 if (dp % dv) {
                     return -1;
                 }
-                t0 = t1 = check1(t0, t1, dp / dv);
+                if ((t0 = t1 = check1(t0, t1, dp / dv)) == -1) {
+                    return -1;
+                }
             }
         } else {
-            double m = (double)dv / da - 0.5;  // = -b/2
-            double c = (double)(dp * 2) / da;  // = c
-            double E = m * m - c;              // = D/4
+            double m = (double)dv / da - 0.5;  // m = -b/2
+            double c = (double)(dp * 2) / da;
+            double E = m * m - c;              // E = D/4
             if (fabs(E) < 0.000001) {          // discriminant == 0
-                t0 = t1 = check1(t0, t1, nonnegint(m));
+                if ((t0 = t1 = check1(t0, t1, nonnegint(m))) == -1) {
+                    return -1;
+                }
             } else if (E > 0) {
-                double root = sqrt(E);         // = sqrt(D)/2
+                double root = sqrt(E);         // sqrt(E) = sqrt(D)/2
                 check2(&t0, &t1, nonnegint(m - root), nonnegint(m + root));
+                if (t0 == -1) {
+                    return -1;
+                }
             } else {
                 return -1;
             }
-        }
-        if (t0 == -1) {
-            return -1;
         }
     }
     return t0 == -2 ? 0 : t0;  // but t0 is never -2 for my puzzle input
@@ -243,7 +244,6 @@ int main(void)
             }
         }
     }
-    // printf("Collision pairs: %d\n", colcount);  // debug
 
     // Sort collisions by ascending time, ord1, ord2
     qsort(colpairs, (size_t)colcount, sizeof(ColPair), cmpcol);
@@ -264,7 +264,6 @@ int main(void)
     for (int i = 0; i < particlecount; ++i) {
         alive += (particles[i].col < 0);
     }
-    printf("Part 2: %d\n", alive);  // right answer = 438 for my puzzle input
-
+    printf("Part 2: %d\n", alive);  // right answer = 438 for my input
     return 0;
 }
