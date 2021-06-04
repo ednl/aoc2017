@@ -1,128 +1,63 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
+#include <inttypes.h>
+// #include <limits.h>
 #include <stdbool.h>
 #include <math.h>
-#include <limits.h>
 
-#define DIM  (3)
-#define N (1000)
+#define DIM       (3)
+#define N      (1000)
+#define COLMAX (2000)
 
 typedef struct particle {
-    int acc[DIM], vel[DIM], pos[DIM];
-    int n;
-    bool alive;
+    int64_t acc[DIM], vel[DIM], pos[DIM];
+    int64_t col;
+    int ord;
 } Particle;
 
 static Particle cloud[N] = {0};
 
-static inline void addv(int *r, const int *a, const int *b)
+typedef struct colpair {
+    int64_t t;
+    int n1, n2;
+} ColPair;
+
+static ColPair cols[COLMAX] = {0};
+
+// Add vector to vector
+static inline void addv(int64_t *r, const int64_t *a, const int64_t *b)
 {
     for (size_t i = 0; i < DIM; ++i) {
         r[i] = a[i] + b[i];
     }
 }
 
-static inline void subv(int *r, const int *a, const int *b)
-{
-    for (size_t i = 0; i < DIM; ++i) {
-        r[i] = a[i] - b[i];
-    }
-}
-
-static inline void muls(int *r, const int *a, const int n)
+// Multiply vector by scalar
+static inline void muls(int64_t *r, const int64_t *a, const int n)
 {
     for (size_t i = 0; i < DIM; ++i) {
         r[i] = a[i] * n;
     }
 }
 
-static inline void mulv(int *r, const int *a, const int *b)
-{
-    for (size_t i = 0; i < DIM; ++i) {
-        r[i] = a[i] * b[i];
-    }
-}
-
-// Divide vector by scalar
-static inline void divs(int *r, const int *a, const int n)
-{
-    for (size_t i = 0; i < DIM; ++i) {
-        r[i] = a[i] / n;
-    }
-}
-
-// Divide vector by vector elementwise
-static inline void divv(int *r, const int *a, const int *b)
-{
-    for (size_t i = 0; i < DIM; ++i) {
-        r[i] = a[i] / b[i];
-    }
-}
-
-// Modulus of vector by scalar
-static inline void mods(int *r, const int *a, const int n)
-{
-    for (size_t i = 0; i < DIM; ++i) {
-        r[i] = a[i] % n;
-    }
-}
-
-// Modulus of vector by vector elementwise
-static inline void modv(int *r, const int *a, const int *b)
-{
-    for (size_t i = 0; i < DIM; ++i) {
-        r[i] = a[i] % b[i];
-    }
-}
-
 // Manhattan distance
-static inline int manh(const int *a)
+static inline int64_t manh(const int64_t *a)
 {
-    return abs(a[0]) + abs(a[1]) + abs(a[2]);
+    return llabs(a[0]) + llabs(a[1]) + llabs(a[2]);
 }
 
-// Vector is zero?
-static inline bool iszero(const int *a)
-{
-    return a[0] == 0 && a[1] == 0 && a[2] == 0;
-}
-
-// Vector is not negative?
-static inline bool notneg(const int *a)
-{
-    return a[0] >= 0 && a[1] >= 0 && a[2] >= 0;
-}
-
-// All vector elements equal?
-static inline bool isone(const int *a)
-{
-    return a[0] == a[1] && a[0] == a[2];
-}
-
-static int isqrt(int s)
-{
-    int x0 = s >> 1;
-    if (x0) {
-        int x1 = ((x0 + s / x0) >> 1);
-        while (x1 < x0) {
-            x0 = x1;
-            x1 = ((x0 + s / x0) >> 1);
-        }
-        return x0;
-    } else {
-        return s;
-    }
-}
-
-// p(t) = p + v.t + a.t.(t+1)/2
-//      = p + (v + a/2).t + a.t.t/2
-static int cmp(const void *a, const void *b)
+// Sort particles by acceleration, then speed + half acc., then position
+// (all in terms of Manhattan distance because that is the criterium)
+//   p(t) = p + v.t + a.t.(t+1)/2
+//        = p + (v + a/2).t + a.t.t/2
+static int cmp1(const void *a, const void *b)
 {
     const Particle *p = (const Particle *)a, *q = (const Particle *)b;
-    int n = manh(p->acc);
-    int m = manh(q->acc);
+    int64_t n = manh(p->acc);
+    int64_t m = manh(q->acc);
     if (n == m) {
-        int t[DIM];
+        int64_t t[DIM];
         muls(t, p->vel, 2);
         addv(t, p->acc, t);
         n = manh(t);
@@ -140,6 +75,12 @@ static int cmp(const void *a, const void *b)
     return n < m ? -1 : 1;
 }
 
+// Sort particles by ordinal
+static int cmp2(const void *a, const void *b)
+{
+    return ((const Particle *)a)->ord - ((const Particle *)b)->ord;
+}
+
 static int load(void)
 {
     FILE *f = fopen("20.txt", "r");
@@ -149,112 +90,193 @@ static int load(void)
     }
     int n = 0;
     Particle p = {0};
-    while (fscanf(f,
-        "p=<%d,%d,%d>, "
-        "v=<%d,%d,%d>, "
-        "a=<%d,%d,%d> ",
+    while (n < N && 9 == fscanf(f,
+        "p=<%"SCNd64",%"SCNd64",%"SCNd64">, "
+        "v=<%"SCNd64",%"SCNd64",%"SCNd64">, "
+        "a=<%"SCNd64",%"SCNd64",%"SCNd64"> ",
         &p.pos[0], &p.pos[1], &p.pos[2],
         &p.vel[0], &p.vel[1], &p.vel[2],
-        &p.acc[0], &p.acc[1], &p.acc[2]) == 9 && n < N) {
-        p.n = n;
-        p.alive = true;
+        &p.acc[0], &p.acc[1], &p.acc[2])) {
+        p.col = -1;  // never
+        p.ord = n;
         cloud[n++] = p;
     }
     fclose(f);
     return n;
 }
 
-
-// Returns time of collision (<0 = no collision)
-//   p1 = p2
-//   <=> p1 + (v1 + a1/2).t + a1.t.t/2 = p2 + (v2 + a2/2).t + a2.t.t/2
-//   <=> (a1 - a2)/2.t.t + (v1 - v2 + (a1 - a2)/2).t + (p1 - p2) = 0
-static int collide(const Particle *p, const Particle *q)
+static inline int64_t nonnegint(double a)
 {
-    int da[DIM], dv[DIM], dp[DIM], t0[DIM] = {-1, -1, -1}, t1[DIM] = {-1, -1, -1};
+    double b = round(a);
+    int64_t i = fabs(a - b) < 0.000001 ? (int64_t)b : -1;
+    return i >= 0 ? i : -1;
+}
 
-    subv(da, p->acc, q->acc);           // a1 - a2
-    subv(dv, p->vel, q->vel);           // v1 - v2
-    subv(dp, p->pos, q->pos);           // p1 - p2
+static inline int64_t check1(int64_t a, int64_t b, int64_t t)
+{
+    return t >= 0 && (t == a || t == b || a == -2) ? t : -1;
+}
 
-    // Look at x, y, z separately
+static void check2(int64_t *a, int64_t *b, int64_t t1, int64_t t2)
+{
+    if (t1 < 0 && t2 < 0) {
+        *a = *b = -1;
+    } else if (t1 < 0) {
+        *a = *b = check1(*a, *b, t2);
+    } else if (t2 < 0 || t1 == t2) {
+        *a = *b = check1(*a, *b, t1);
+    } else if (*a == -2) {
+        if (t1 < t2) {
+            *a = t1;
+            *b = t2;
+        } else {
+            *a = t2;
+            *b = t1;
+        }
+    } else if (*a == t1 && *b != t2) {
+        *b = t1;
+    } else if (*a == t2 && *b != t1) {
+        *b = t2;
+    } else if (*b == t1 && *a != t2) {
+        *a = t1;
+    } else if (*b == t2 && *a != t1) {
+        *a = t2;
+    } else if (!((*a == t1 && *b == t2) || (*a == t2 && *b == t1))) {
+        *a = *b = -1;
+    }
+}
+
+// Returns earliest time of collision (<0 = no collision)
+// p1(t) = p2(t)
+// <=> p1 + v1.t + a1.t.(t+1)/2 = p2 + v2.t + a2.t.(t+1)/2
+// <=> p1 + (v1 + a1/2).t + a1.t.t/2 = p2 + (v2 + a2/2).t + a2.t.t/2
+// <=> (a1 - a2)/2.t.t + (v1 - v2 + (a1 - a2)/2).t + (p1 - p2) = 0
+// <=> (a1 - a2).t.t + (2.(v1 - v2) + (a1 - a2)).t + 2.(p1 - p2) = 0
+// <=> t.t + (2.(v1 - v2)/(a1 - a2) + 1).t + 2.(p1 - p2)/(a1 - a2) = 0
+
+// (a1 - a2) == 0
+//    => (v1 - v2).t + (p1 - p2) = 0
+//   (v1 - v2) == 0
+//      => (p1 - p2) == 0 ? all t : no t
+//   (v1 - v2) != 0
+//      => t = -(p1 - p2)/(v1 - v2)
+
+// (a1 - a2) != 0
+//    => "a" = (a1 - a2)
+//       "b" = 2.(v1 - v2) + (a1 - a2)
+//       "c" = 2.(p1 - p2)
+//       "D" = b.b - 4.a.c = (2.(v1 - v2) + (a1 - a2))^2 - 8.(a1 - a2).(p1 - p2)
+//   D < 0
+//      => no t
+//   D == 0
+//      => t = -b/(2.a) = -(2.(v1 - v2) + (a1 - a2))/(2.(a1 - a2))
+//   D > 0
+//      => t0 = (-b - sqrt(D))/(2.a)
+//         t1 = (-b + sqrt(D))/(2.a)
+static int64_t collide(const Particle *p1, const Particle *p2)
+{
+    int64_t t0 = -2, t1 = -2;  // -2=all -1=none
+
     for (int i = 0; i < DIM; ++i) {
-        if (da[i] == 0) {               // (a1 - a2) == 0?
-            // Linear equation
-            //  => (v1 - v2).t + (p1 - p2) = 0
-            // <=> t = -(p1 - p2)/(v1 - v2)
-            if (dv[i] == 0) {           // same speed?
-                if (dp[i] == 0) {       // same place?
-                    t0[i] = t1[i] = 0;  // continuous collision from t=0
+        int64_t da = p1->acc[i] - p2->acc[i];
+        int64_t dv = p2->vel[i] - p1->vel[i];  // -(v1 - v2) = (v2 - v1)
+        int64_t dp = p1->pos[i] - p2->pos[i];
+        if (da == 0) {
+            if (dv == 0) {
+                if (dp != 0) {
+                    return -1;
                 }
-            } else if (dp[i] % dv[i] == 0) {
-                t0[i] = t1[i] = -dp[i] / dv[i];  // collision at t = -(p1 - p2)/(v1 - v2)
+            } else {
+                if (dp % dv) {
+                    return -1;
+                }
+                t0 = t1 = check1(t0, t1, dp / dv);
             }
         } else {
-            // Quadratic equation
-            //  (a1 - a2)/2.t.t + (v1 - v2 + (a1 - a2)/2).t + (p1 - p2) = 0
-            //  => D = (v1 - v2 + (a1 - a2)/2)^2 - 2.(a1 - a2).(p1 - p2)
-
-            // (a1 - a2) % 2 ? => no collision
-            // D < 0 ? => no collision
-            // D == 0 ? => t = (v2 - v1)/(a1 - a2) - 1/2
-            // D not square ? => no collision
-
-            if (da[i] % 2 == 0) {
-                int b = dv[i] + da[i] / 2;
-                int D = b * b - 2 * da[i] * dp[i];
-                if (D == 0) {
-                    if (b % da[i] == 0) {
-                        t0[i] = t1[i] = -b / da[i];
-                    }
-                } else if (D > 0) {
-                    int root = isqrt(D);
-                    if (root * root == D) {
-                        int n = -b - root;
-                        int m = -b + root;
-                        n = n % da[i] ? -1 : n / da[i];
-                        m = m % da[i] ? -1 : m / da[i];
-                        if (n < m) {
-                            t0[i] = n;
-                            t1[i] = m;
-                        } else {
-                            t0[i] = m;
-                            t1[i] = n;
-                        }
-                    }
-                }
+            // double a = 1;
+            double b = (double)dv / da - 0.5;  // = -b/2a
+            double c = (double)(dp * 2) / da;  // = c/a
+            double D = b * b - c;              // = D/4
+            if (fabs(D) < 0.000001) {          // discriminant == 0
+                t0 = t1 = check1(t0, t1, nonnegint(b));
+            } else if (D > 0) {
+                double root = sqrt(D);         // = sqrt(D)/2
+                check2(&t0, &t1, nonnegint(b - root), nonnegint(b + root));
+            } else {
+                return -1;
             }
         }
+        if (t0 == -1) {
+            return -1;
+        }
     }
-    // TODO: check t0 and t1, return collision time or not
-    return -1;
+    return t0 == -2 ? 0 : t0;  // but t0 is never -2 for my puzzle input
+}
+
+static int cmpcol(const void *a, const void *b)
+{
+    const ColPair *p = (const ColPair *)a, *q = (const ColPair *)b;
+    int64_t i = p->t - q->t;
+    if (i == 0) {
+        int j = p->n1 - q->n1;
+        if (j == 0) {
+            return p->n2 - q->n2;
+        }
+        return j;
+    }
+    return i < 0 ? -1 : 1;
 }
 
 int main(void)
 {
-    int n = load();
+    int particlecount = load();
 
     // Part 1
-    qsort(cloud, (size_t)n, sizeof(Particle), cmp);
-    // Show first few sorted elements
-    for (int i = 0; i < 5; ++i) {
-        printf("%d : %3d : a(%2d,%2d,%2d) v(%3d,%3d,%3d) p(%5d,%5d,%5d)\n",
-            i, cloud[i].n,
-            cloud[i].acc[0], cloud[i].acc[1], cloud[i].acc[2],
-            cloud[i].vel[0], cloud[i].vel[1], cloud[i].vel[2],
-            cloud[i].pos[0], cloud[i].pos[1], cloud[i].pos[2]
-        );
-    }
-    // Result
-    printf("Part 1: %d\n", cloud[0].n);
+    qsort(cloud, (size_t)particlecount, sizeof(Particle), cmp1);
+    printf("Part 1: %d\n", cloud[0].ord);
 
-    int i, j, t;
-    for (i = 0; i < N - 1; ++i) {
-        for (j = i + 1; j < N; ++j) {
-            if ((t = collide(&cloud[i], &cloud[j])) >= 0) {
-                printf("%5d : %3d %3d\n", t, cloud[i].n, cloud[j].n);
+    // Reset particle order => cloud[i].n == i
+    qsort(cloud, (size_t)particlecount, sizeof(Particle), cmp2);
+
+    // Part 2
+    int colcount = 0;
+    for (int i = 0; i < particlecount - 1; ++i) {
+        for (int j = i + 1; j < particlecount; ++j) {
+            int64_t t = collide(&cloud[i], &cloud[j]);
+            if (colcount == COLMAX) {
+                printf("cols[] too small\n");
+                exit(2);
+            }
+            if (t >= 0 && colcount < COLMAX) {
+                cols[colcount++] = (ColPair){
+                    .t = t,
+                    .n1 = cloud[i].ord,
+                    .n2 = cloud[j].ord,
+                };
             }
         }
     }
+
+    // Sort collisions by ascending time, first ord, second ord
+    qsort(cols, (size_t)colcount, sizeof(ColPair), cmpcol);
+
+    // Strike out particles which collided
+    for (int i = 0; i < colcount; ++i) {
+        Particle *p1 = &cloud[cols[i].n1];
+        Particle *p2 = &cloud[cols[i].n2];
+        int64_t t = cols[i].t;
+        if ((p1->col < 0 || p1->col == t) && (p2->col < 0 || p2->col == t)) {
+            p1->col = p2->col = t;
+        }
+    }
+
+    int alive = 0;
+    for (int i = 0; i < particlecount; ++i) {
+        alive += (cloud[i].col < 0);
+    }
+
+    // Right answer = 438 for my puzzle input
+    printf("Part 2: %d\n", alive);
+
     return 0;
 }
