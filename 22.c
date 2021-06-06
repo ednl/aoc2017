@@ -4,39 +4,41 @@
 #include <string.h>
 
 #define INITSIZE  (25U)
+#define PAD       (10U)
 #define CLEAN     (0)
 #define WEAKENED  (1)
 #define INFECTED  (2)
 #define FLAGGED   (3)
+#define MASK      (3)
 
 static bool addrow_below(char **g, unsigned int *r, const unsigned int c)
 {
-    char *t = realloc(*g, (*r + 1) * c);
+    char *t = realloc(*g, (*r + PAD) * c);
     if (t == NULL) {
         return false;
     }
-    memset(t + *r * c, CLEAN, c);  // clear new last row (use old row count)
+    memset(t + *r * c, CLEAN, c * PAD);  // clear new last rows (use old row count)
     *g = t;
-    (*r)++;
+    *r += PAD;
     return true;
 }
 
 static bool addrow_above(char **g, unsigned int *r, const unsigned int c)
 {
-    char *t = realloc(*g, (*r + 1) * c);
+    char *t = realloc(*g, (*r + PAD) * c);
     if (t == NULL) {
         return false;
     }
-    memmove(t + c, t, *r * c);  // move grid down (use old row count)
-    memset(t, CLEAN, c);        // clear new first row
+    memmove(t + c * PAD, t, *r * c);  // move grid down (use old row count)
+    memset(t, CLEAN, c * PAD);        // clear new first row
     *g = t;
-    (*r)++;
+    *r += PAD;
     return true;
 }
 
 static bool addcol(char **g, const unsigned int r, unsigned int *c, const unsigned int shift)
 {
-    const unsigned c1 = *c + 1;
+    const unsigned c1 = *c + PAD;
     char *t = malloc(r * c1);
     if (t == NULL) {
         return false;
@@ -58,7 +60,7 @@ static bool addcol_right(char **g, const unsigned int r, unsigned int *c)
 
 static bool addcol_left(char **g, const unsigned int r, unsigned int *c)
 {
-    return addcol(g, r, c, 1);
+    return addcol(g, r, c, PAD);
 }
 
 static void print(const char *g, const unsigned int r, const unsigned int c)
@@ -112,49 +114,42 @@ static void init(char **g, unsigned int *r, unsigned int *c)
     fclose(f);
 }
 
-static unsigned int part1(char **g, unsigned int *r, unsigned int *c, const unsigned int part)
+static unsigned int evolve(char **g, unsigned int *r, unsigned int *c, const char part)
 {
+    const char step = 3 - part;  // next state: part 1 = 0/2, part 2 = 0/1/2/3
+    const int bursts = part == 1 ? 10000 : 10000000;
+
     unsigned int infected = 0;
-    unsigned int i = *r / 2, j = *c / 2;
-    const char mask = 3;  // for grid and face
-    char face = 0; // face 0=up, 1=right, 2=down, 3=left
-    char step = part == 1 ? 2 : 1;
-    int bursts = 10 * 1000;
-    if (part == 2) {
-        bursts *= 1000;
-    }
+    unsigned int i = *r / 2, j = *c / 2;  // start in the middle
+    char face = 0;  // face 0=up, 1=right, 2=down, 3=left
 
     for (int burst = 0; burst < bursts; ++burst) {
         if (i == 0) {
             addrow_above(g, r, *c);
-            i = 1;
+            i = PAD;
         } else if (i == *r - 1) {
             addrow_below(g, r, *c);
         }
         if (j == 0) {
             addcol_left(g, *r, c);
-            j = 1;
+            j = PAD;
         } else if (j == *c - 1) {
             addcol_right(g, *r, c);
         }
         unsigned int index = i * *c + j;
         switch ((*g)[index]) {
             case CLEAN:
-                face = (face + 3) & mask;  // turn left
-                (*g)[index] = part == 1 ? INFECTED : WEAKENED;
-                ++infected;
-                break;
-            case WEAKENED:
-                (*g)[index] = INFECTED;
+                face = (face + 3) & MASK;  // turn left
                 break;
             case INFECTED:
-                face = (face + 1) & mask;  // turn right
-                (*g)[index] = CLEAN;
+                face = (face + 1) & MASK;  // turn right
                 break;
             case FLAGGED:
-                (*g)[index] = CLEAN;
+                face = (face + 2) & MASK;  // reverse
                 break;
         }
+        (*g)[index] = ((*g)[index] + step) & MASK;  // next state
+        infected += (*g)[index] == INFECTED;
         switch(face) {
             case 0: --i; break;
             case 1: ++j; break;
@@ -169,9 +164,17 @@ int main(void)
 {
     char *grid = NULL;
     unsigned int rows, cols;
+
+    // Part 1
     init(&grid, &rows, &cols);
-    printf("Part 1: %u\n", part1(&grid, &rows, &cols)); // right answer = 5261
-    print(grid, rows, cols);
+    printf("Part 1: %u\n", evolve(&grid, &rows, &cols, 1)); // right answer = 5261
+    // printf("%u %u\n", rows, cols);  // 55 75 for PAD=10
+    // print(grid, rows, cols);  // debug
+
+    // Part 2
+    init(&grid, &rows, &cols);
+    printf("Part 2: %u\n", evolve(&grid, &rows, &cols, 2)); // right answer = 2511927
+    // printf("%u %u\n", rows, cols);  // 415 385 for PAD=10
 
     free(grid);
     return 0;
