@@ -112,12 +112,19 @@ static void init(char **g, unsigned int *r, unsigned int *c)
     fclose(f);
 }
 
-static unsigned int part1(char **g, unsigned int *r, unsigned int *c)
+static unsigned int part1(char **g, unsigned int *r, unsigned int *c, const unsigned int part)
 {
     unsigned int infected = 0;
     unsigned int i = *r / 2, j = *c / 2;
-    char face = 0, mask = 3; // face 0=up, 1=right, 2=down, 3=left
-    for (int burst = 0; burst < 10000; ++burst) {
+    const char mask = 3;  // for grid and face
+    char face = 0; // face 0=up, 1=right, 2=down, 3=left
+    char step = part == 1 ? 2 : 1;
+    int bursts = 10 * 1000;
+    if (part == 2) {
+        bursts *= 1000;
+    }
+
+    for (int burst = 0; burst < bursts; ++burst) {
         if (i == 0) {
             addrow_above(g, r, *c);
             i = 1;
@@ -131,13 +138,22 @@ static unsigned int part1(char **g, unsigned int *r, unsigned int *c)
             addcol_right(g, *r, c);
         }
         unsigned int index = i * *c + j;
-        if ((*g)[index] == INFECTED) {
-            face = (face + 1) & mask;  // turn right
-            (*g)[index] = CLEAN;
-        } else if ((*g)[index] == CLEAN) {
-            face = (face + 3) & mask;  // turn left
-            (*g)[index] = INFECTED;
-            ++infected;
+        switch ((*g)[index]) {
+            case CLEAN:
+                face = (face + 3) & mask;  // turn left
+                (*g)[index] = part == 1 ? INFECTED : WEAKENED;
+                ++infected;
+                break;
+            case WEAKENED:
+                (*g)[index] = INFECTED;
+                break;
+            case INFECTED:
+                face = (face + 1) & mask;  // turn right
+                (*g)[index] = CLEAN;
+                break;
+            case FLAGGED:
+                (*g)[index] = CLEAN;
+                break;
         }
         switch(face) {
             case 0: --i; break;
