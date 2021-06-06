@@ -3,52 +3,47 @@
 #include <stdbool.h>
 #include <string.h>
 
-#define INITSIZE (25U)
+#define INITSIZE  (25U)
+#define CLEAN     (0)
+#define WEAKENED  (1)
+#define INFECTED  (2)
+#define FLAGGED   (3)
 
-enum state {
-    CLEAN,
-    WEAKENED,
-    INFECTED,
-    FLAGGED,
-};
-
-static bool addrow_below(enum state **g, unsigned int *r, const unsigned int c)
+static bool addrow_below(char **g, unsigned int *r, const unsigned int c)
 {
-    enum state *t = realloc(*g, (*r + 1) * c * sizeof **g);
+    char *t = realloc(*g, (*r + 1) * c);
     if (t == NULL) {
         return false;
     }
-    memset(t + *r * c, CLEAN, c * sizeof *t);  // clear new last row (use old row count)
+    memset(t + *r * c, CLEAN, c);  // clear new last row (use old row count)
     *g = t;
     (*r)++;
     return true;
 }
 
-static bool addrow_above(enum state **g, unsigned int *r, const unsigned int c)
+static bool addrow_above(char **g, unsigned int *r, const unsigned int c)
 {
-    enum state *t = realloc(*g, (*r + 1) * c * sizeof **g);
+    char *t = realloc(*g, (*r + 1) * c);
     if (t == NULL) {
         return false;
     }
-    memmove(t + c, t, *r * c * sizeof *t);  // move grid down (use old row count)
-    memset(t, CLEAN, c * sizeof *t);  // clear new first row
+    memmove(t + c, t, *r * c);  // move grid down (use old row count)
+    memset(t, CLEAN, c);        // clear new first row
     *g = t;
     (*r)++;
     return true;
 }
 
-static bool addcol(enum state **g, const unsigned int r, unsigned int *c, const unsigned int shift)
+static bool addcol(char **g, const unsigned int r, unsigned int *c, const unsigned int shift)
 {
-    unsigned c1 = *c + 1;
-    size_t newsize = r * c1 * sizeof **g;
-    enum state *t = malloc(newsize);
+    const unsigned c1 = *c + 1;
+    char *t = malloc(r * c1);
     if (t == NULL) {
         return false;
     }
-    memset(t, CLEAN, newsize);
-    size_t oldrowsize = *c * sizeof **g;
+    memset(t, CLEAN, r * c1);
     for (unsigned int i = 0; i < r; ++i) {
-        memcpy(t + i * c1 + shift, *g + i * *c, oldrowsize);
+        memcpy(t + i * c1 + shift, *g + i * *c, *c);
     }
     free(*g);
     *g = t;
@@ -56,26 +51,27 @@ static bool addcol(enum state **g, const unsigned int r, unsigned int *c, const 
     return true;
 }
 
-static bool addcol_right(enum state **g, const unsigned int r, unsigned int *c)
+static bool addcol_right(char **g, const unsigned int r, unsigned int *c)
 {
     return addcol(g, r, c, 0);
 }
 
-static bool addcol_left(enum state **g, const unsigned int r, unsigned int *c)
+static bool addcol_left(char **g, const unsigned int r, unsigned int *c)
 {
     return addcol(g, r, c, 1);
 }
 
-static void print(const enum state *g, const unsigned int r, const unsigned int c)
+static void print(const char *g, const unsigned int r, const unsigned int c)
 {
-    char ch;
+    char ch = '?';
     for (unsigned int i = 0; i < r; ++i) {
         for (unsigned int j = 0; j < c; ++j) {
             switch (g[i * c + j]) {
                 case CLEAN   : ch = '.'; break;
-                case WEAKENED: ch = 'o'; break;
+                case WEAKENED: ch = 'W'; break;
                 case INFECTED: ch = '#'; break;
-                case FLAGGED : ch = '!'; break;
+                case FLAGGED : ch = 'F'; break;
+                default:       ch = '?'; break;
             }
             printf("%c", ch);
         }
@@ -83,70 +79,83 @@ static void print(const enum state *g, const unsigned int r, const unsigned int 
     }
 }
 
-int main(void)
+static void init(char **g, unsigned int *r, unsigned int *c)
 {
-    // Make square array of arrays of bool
-    unsigned int rows = INITSIZE, cols = INITSIZE;
-    enum state *grid = malloc(rows * cols * sizeof *grid);
-    if (grid == NULL) {
-        fprintf(stderr, "Out of memory");
-        exit(1);
+    if (*g != NULL) {
+        free(*g);
     }
-    // Read file into array
+    *g = calloc(INITSIZE * INITSIZE, sizeof(char));
+    if (*g == NULL) {
+        fprintf(stderr, "Out of memory");
+        exit(2);
+    }
+    *r = *c = INITSIZE;
+
     FILE *f = fopen("22.txt", "r");
     if (f == NULL) {
         fprintf(stderr, "File not found");
-        exit(2);
+        exit(1);
     }
     char *buf = NULL;
     size_t bufsize = 0;
     ssize_t len;
     unsigned int i = 0, j;
-    while ((len = getline(&buf, &bufsize, f)) > 0 && i < rows) {
-        char *c = buf;
+    while ((len = getline(&buf, &bufsize, f)) > 0 && i < INITSIZE) {
+        char *pc = buf;
         j = 0;
-        while (*c && j < cols) {
-            grid[i * cols + j++] = *c++ == '#' ? INFECTED : CLEAN;
+        while (*pc && j < INITSIZE) {
+            (*g)[i * INITSIZE + j++] = *pc++ == '#' ? INFECTED : CLEAN;
         }
         ++i;
     }
     free(buf);
     fclose(f);
+}
 
-    unsigned int r = rows / 2, c = cols / 2;
+static unsigned int part1(char **g, unsigned int *r, unsigned int *c)
+{
     unsigned int infected = 0;
-    char face = 0, mask = 3; // 0=up, 1=right, 2=down, 3=left
+    unsigned int i = *r / 2, j = *c / 2;
+    char face = 0, mask = 3; // face 0=up, 1=right, 2=down, 3=left
     for (int burst = 0; burst < 10000; ++burst) {
-        if (r == 0) {
-            addrow_above(&grid, &rows, cols);
-            ++r;
-        } else if (r == rows - 1) {
-            addrow_below(&grid, &rows, cols);
+        if (i == 0) {
+            addrow_above(g, r, *c);
+            i = 1;
+        } else if (i == *r - 1) {
+            addrow_below(g, r, *c);
         }
-        if (c == 0) {
-            addcol_left(&grid, rows, &cols);
-            ++c;
-        } else if (c == cols - 1) {
-            addcol_right(&grid, rows, &cols);
+        if (j == 0) {
+            addcol_left(g, *r, c);
+            j = 1;
+        } else if (j == *c - 1) {
+            addcol_right(g, *r, c);
         }
-        unsigned int index = r * cols + c;
-        if (grid[index] == INFECTED) {
+        unsigned int index = i * *c + j;
+        if ((*g)[index] == INFECTED) {
             face = (face + 1) & mask;  // turn right
-            grid[index] = CLEAN;
-        } else if (grid[index] == CLEAN) {
+            (*g)[index] = CLEAN;
+        } else if ((*g)[index] == CLEAN) {
             face = (face + 3) & mask;  // turn left
-            grid[index] = INFECTED;
+            (*g)[index] = INFECTED;
             ++infected;
         }
         switch(face) {
-            case 0: --r; break;
-            case 1: ++c; break;
-            case 2: ++r; break;
-            case 3: --c; break;
+            case 0: --i; break;
+            case 1: ++j; break;
+            case 2: ++i; break;
+            case 3: --j; break;
         }
     }
+    return infected;
+}
+
+int main(void)
+{
+    char *grid = NULL;
+    unsigned int rows, cols;
+    init(&grid, &rows, &cols);
+    printf("Part 1: %u\n", part1(&grid, &rows, &cols)); // right answer = 5261
     print(grid, rows, cols);
-    printf("Part 1: %u\n", infected); // right answer = 5261
 
     free(grid);
     return 0;
