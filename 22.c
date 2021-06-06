@@ -4,7 +4,7 @@
 #include <string.h>
 
 #define INITSIZE  (25U)
-#define PAD       (10U)
+#define PAD       (50U)
 #define CLEAN     (0)
 #define WEAKENED  (1)
 #define INFECTED  (2)
