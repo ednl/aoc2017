@@ -44,10 +44,31 @@ int main(void)
     uint8_t n = load();
     qsort(comp, N, sizeof *comp, sort);
     for (int i = 0; i < n; ++i) {
-        printf("%2d: %2d %2d\n", comp[i].id, comp[i].a, comp[i].b);
+        printf("%2d: %2d %2d\n", (comp[i].id = (uint8_t)i), comp[i].a, comp[i].b);
     }
 
+    struct save {
+        int index;
+        int partialsum;
+    };
+    struct save stack[100] = {0};
+    int stacklen = 0;
+
     int i = 0, bridge = 0;
+    while (stacklen > 0) {
+        --stacklen;
+        i = stack[stacklen].index;
+        bridge = stack[stacklen].partialsum;
+        bridge += comp[i].a + comp[i].b;
+        int j = i + 1;
+        while (j < n && comp[j].a < comp[i].b) {
+            ++j;
+        }
+        while (j < n && comp[j].a == comp[i].b) {
+            ;
+        }
+    }
+
     uint8_t port = 0;
     while (i < n) {
         while (i < n && comp[i].a < port) {
