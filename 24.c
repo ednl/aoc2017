@@ -54,20 +54,31 @@ int main(void)
     struct stackitem stack[100] = {0};
     int stacklen = 0;
 
-    int i = 0, b = 0;
+    int i = 0, b = 0, maxspan = 0;
+    stack[stacklen++] = (struct stackitem){ .index = i, .bridge = b };
     while (stacklen > 0) {
         --stacklen;
         i = stack[stacklen].index;
         b = stack[stacklen].bridge;
         b += comp[i].a + comp[i].b;
+        if (b > maxspan) {
+            maxspan = b;
+        }
         int j = i + 1;
-        while (j < n && comp[j].a < comp[i].b) {
+        while (comp[j].a < comp[i].b && j < n) {
             ++j;
         }
-        while (j < n && comp[j].a == comp[i].b) {
+        while (comp[j].a == comp[i].b && comp[j].id && j < n && stacklen < 100) {
             stack[stacklen++] = (struct stackitem){ .index = j, .bridge = b };
+            comp[j].id = 0;
+        }
+        if (stacklen == 100) {
+            printf("%d\n", maxspan);
+            fprintf(stderr, "Stack too small\n");
+            exit(1);
         }
     }
+    printf("%d\n", maxspan);  // 237 = too low
 
     // uint8_t port = 0;
     // int bridge = 0;
