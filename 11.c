@@ -19,8 +19,8 @@ int main(void)
             {
                 case 'n': --r; break;
                 case 's': ++r; break;
-                case 'e': ++q; if (p == 's') --r; break;
                 case 'w': --q; if (p == 'n') ++r; break;
+                case 'e': ++q; if (p == 's') --r; break;
             }
             p = c;
             d = dist(q, r);
