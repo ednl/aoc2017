@@ -2,12 +2,13 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <inttypes.h>
+#include <stdbool.h>
 
-#define N (57)
+#define N (57)  // number of lines in the input file
 typedef struct comp {
-    uint8_t id, a, b;
-} Comp, *pComp;
-
+    int a, b, val;
+    bool used;
+} Comp;
 static Comp comp[N] = {0};
 
 static int sort(const void *a, const void *b)
@@ -16,83 +17,53 @@ static int sort(const void *a, const void *b)
     const Comp *q = (const Comp *)b;
     int d = p->a - q->a;
     if (d == 0) {
-        d = p->b - q->b;
-        if (d == 0) {
-            return p->id - q->id;
-        }
+        return p->b - q->b;
     }
     return d;
 }
 
-static uint8_t load(void)
+static int load(void)
 {
-    uint8_t i = 0;
+    int i = 0;
     FILE *f = fopen("24.txt", "r");
     if (f != NULL) {
-        uint8_t a, b;
-        while (i < N && fscanf(f, "%"SCNd8"/%"SCNd8" ", &a, &b) == 2) {
-            comp[i] = a <= b ? (Comp){i, a, b} : (Comp){i, b, a};
-            ++i;
+        int a, b;
+        while (i < N && fscanf(f, "%d/%d ", &a, &b) == 2) {
+            comp[i++] = a <= b ? (Comp){a, b, a + b, false} : (Comp){b, a, a + b, false};
         }
         fclose(f);
     }
     return i;
 }
 
+static int bridge(int count, int span, int port, int nmin, int nmax)
+{
+    int i = nmin, b;
+    while (i < nmax && comp[i].a < port) {
+        ++i;
+    }
+    if (i == nmax) {
+        return span;
+    }
+    while (i < nmax && comp[i].a == port) {
+        if (!comp[i].used) {
+            comp[i].used = true;
+            b += bridge(count + 1, span + comp[i].val, comp[i].b, i + 1, nmax);
+            comp[i].used = false;
+        }
+        ++i;
+    }
+    return bmax;
+}
+
 int main(void)
 {
-    uint8_t n = load();
+    int n = load();
     qsort(comp, N, sizeof *comp, sort);
     for (int i = 0; i < n; ++i) {
-        printf("%2d: %2d %2d\n", (comp[i].id = (uint8_t)i), comp[i].a, comp[i].b);
+        printf("%2d: %2d %2d\n", i, comp[i].a, comp[i].b);
     }
+    printf("%d\n", bridge(0, 0, 0, n));  // 743 = too low
 
-    struct stackitem {
-        int index;
-        int bridge;
-    };
-    struct stackitem stack[100] = {0};
-    int stacklen = 0;
-
-    int i = 0, b = 0, maxspan = 0;
-    stack[stacklen++] = (struct stackitem){ .index = i, .bridge = b };
-    while (stacklen > 0) {
-        --stacklen;
-        i = stack[stacklen].index;
-        b = stack[stacklen].bridge;
-        b += comp[i].a + comp[i].b;
-        if (b > maxspan) {
-            maxspan = b;
-        }
-        int j = i + 1;
-        while (comp[j].a < comp[i].b && j < n) {
-            ++j;
-        }
-        while (comp[j].a == comp[i].b && comp[j].id && j < n && stacklen < 100) {
-            stack[stacklen++] = (struct stackitem){ .index = j, .bridge = b };
-            comp[j].id = 0;
-        }
-        if (stacklen == 100) {
-            printf("%d\n", maxspan);
-            fprintf(stderr, "Stack too small\n");
-            exit(1);
-        }
-    }
-    printf("%d\n", maxspan);  // 237 = too low
-
-    // uint8_t port = 0;
-    // int bridge = 0;
-    // while (i < n) {
-    //     while (i < n && comp[i].a < port) {
-    //         ++i;
-    //     }
-    //     if (i < n) {
-    //         printf("%d-%d ", comp[i].a, comp[i].b);
-    //         port = comp[i].b;
-    //         bridge += port;
-    //         ++i;
-    //     }
-    // }
-    // printf("= %d\n", bridge);
     return 0;
 }
