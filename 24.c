@@ -6,7 +6,7 @@
 
 #define N (57)  // number of lines in the input file
 typedef struct comp {
-    int a, b, val;
+    int a, b;
     bool used;
 } Comp;
 static Comp comp[N] = {0};
@@ -29,31 +29,32 @@ static int load(void)
     if (f != NULL) {
         int a, b;
         while (i < N && fscanf(f, "%d/%d ", &a, &b) == 2) {
-            comp[i++] = a <= b ? (Comp){a, b, a + b, false} : (Comp){b, a, a + b, false};
+            comp[i++] = a <= b ? (Comp){ a, b, false } : (Comp){ b, a, false };
         }
         fclose(f);
     }
     return i;
 }
 
-static int bridge(int count, int span, int port, int nmin, int nmax)
+static int bridge(int count, int prev, int port)
 {
-    int i = nmin, b;
-    while (i < nmax && comp[i].a < port) {
-        ++i;
-    }
-    if (i == nmax) {
-        return span;
-    }
-    while (i < nmax && comp[i].a == port) {
-        if (!comp[i].used) {
+    static int bmax = 0;
+    int i = 0, next = prev;
+    while (i < N) {
+        if (!comp[i].used && (comp[i].a == port || comp[i].b == port)) {
             comp[i].used = true;
-            b += bridge(count + 1, span + comp[i].val, comp[i].b, i + 1, nmax);
+            next = prev + comp[i].a + comp[i].b;
+            // printf("%d: %d-%d (%d) | ", count, comp[i].a, comp[i].b, next);
+            next += bridge(count + 1, next, port == comp[i].a ? comp[i].b : comp[i].a);
             comp[i].used = false;
         }
         ++i;
     }
-    return bmax;
+    if (next >= bmax) {
+        bmax = next;
+        printf("count %2d sum %4d\n", count, next);
+    }
+    return next;
 }
 
 int main(void)
@@ -63,7 +64,7 @@ int main(void)
     for (int i = 0; i < n; ++i) {
         printf("%2d: %2d %2d\n", i, comp[i].a, comp[i].b);
     }
-    printf("%d\n", bridge(0, 0, 0, n));  // 743 = too low
+    printf("%d\n", bridge(0, 0, 0));  // 743 = too low, 23028 = too high
 
     return 0;
 }
