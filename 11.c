@@ -8,6 +8,8 @@ static inline int dist(int q, int r)
 
 int main(void)
 {
+    // Axial coordinates (q,r)
+    // ref.: https://www.redblobgames.com/grids/hexagons/
     int q = 0, r = 0, d = 0, dmax = 0;
     FILE *f = fopen("11.txt", "r");
     if (f != NULL) {
