@@ -6,65 +6,52 @@
 
 #define N (57)  // number of lines in the input file
 typedef struct comp {
-    int a, b;
+    int a, b, c;
     bool used;
 } Comp;
+
 static Comp comp[N] = {0};
+static int maxsum = 0;
+static int maxlen = 0;
+static int maxsum2 = 0;
 
-static int sort(const void *a, const void *b)
+static void load(void)
 {
-    const Comp *p = (const Comp *)a;
-    const Comp *q = (const Comp *)b;
-    int d = p->a - q->a;
-    if (d == 0) {
-        return p->b - q->b;
-    }
-    return d;
-}
-
-static int load(void)
-{
-    int i = 0;
     FILE *f = fopen("24.txt", "r");
     if (f != NULL) {
-        int a, b;
+        int i = 0, a, b;
         while (i < N && fscanf(f, "%d/%d ", &a, &b) == 2) {
-            comp[i++] = a <= b ? (Comp){ a, b, false } : (Comp){ b, a, false };
+            comp[i++] = (Comp){ a, b, a + b, false };
         }
         fclose(f);
     }
-    return i;
 }
 
-static int bridge(int count, int prev, int port)
+static void bridge(int port, int len, int sum)
 {
-    static int bmax = 0;
-    int i = 0, next = prev;
-    while (i < N) {
-        if (!comp[i].used && (comp[i].a == port || comp[i].b == port)) {
+    if (sum > maxsum) {
+        maxsum = sum;
+    }
+    if (len > maxlen) {
+        maxlen = len;
+        maxsum2 = sum;
+    } else if (len == maxlen && sum > maxsum2) {
+        maxsum2 = sum;
+    }
+    for (int i = 0; i < N; ++i) {
+        if (!comp[i].used && (port == comp[i].a || port == comp[i].b)) {
             comp[i].used = true;
-            next = prev + comp[i].a + comp[i].b;
-            // printf("%d: %d-%d (%d) | ", count, comp[i].a, comp[i].b, next);
-            next += bridge(count + 1, next, port == comp[i].a ? comp[i].b : comp[i].a);
+            bridge(port == comp[i].a ? comp[i].b : comp[i].a, len + 1, sum + comp[i].c);
             comp[i].used = false;
         }
-        ++i;
     }
-    if (next >= bmax) {
-        bmax = next;
-        printf("count %2d sum %4d\n", count, next);
-    }
-    return next;
 }
 
 int main(void)
 {
-    int n = load();
-    qsort(comp, N, sizeof *comp, sort);
-    for (int i = 0; i < n; ++i) {
-        printf("%2d: %2d %2d\n", i, comp[i].a, comp[i].b);
-    }
-    printf("%d\n", bridge(0, 0, 0));  // 743 = too low, 23028 = too high
-
+    load();
+    bridge(0, 0, 0);
+    printf("Part 1: %d\n", maxsum);   // right answer: 1868
+    printf("Part 2: %d\n", maxsum2);  // right answer: 1841
     return 0;
 }
